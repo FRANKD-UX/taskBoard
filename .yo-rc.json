@@ -1,0 +1,22 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "taskBoard",
+    "useGulp": false,
+    "componentType": "webpart",
+    "template": "react",
+    "componentName": "TaskBoard",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.14.0",
+    "sdksVersions": {},
+    "version": "1.22.2",
+    "libraryName": "task-board",
+    "libraryId": "b8ca2390-80ca-4fbe-a2a3-2139fb0c4a96",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionShortDescription": "taskBoard description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false
+  }
+}
