@@ -203,33 +203,34 @@ var TaskModal = function (_a) {
         });
     };
     var handleSave = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var saved, _a;
-        var _b;
-        return tslib_1.__generator(this, function (_c) {
-            switch (_c.label) {
+        var saved, error_1, message;
+        var _a;
+        return tslib_1.__generator(this, function (_b) {
+            switch (_b.label) {
                 case 0:
                     if (!draft.title.trim()) {
                         setTitleError('Title is required');
-                        (_b = titleRef.current) === null || _b === void 0 ? void 0 : _b.focus();
+                        (_a = titleRef.current) === null || _a === void 0 ? void 0 : _a.focus();
                         return [2 /*return*/];
                     }
                     setIsSaving(true);
                     setSaveError('');
-                    _c.label = 1;
+                    _b.label = 1;
                 case 1:
-                    _c.trys.push([1, 3, 4, 5]);
+                    _b.trys.push([1, 3, 4, 5]);
                     return [4 /*yield*/, onSave(draft)];
                 case 2:
-                    saved = _c.sent();
+                    saved = _b.sent();
                     if (!saved) {
-                        setSaveError('Save may have partially succeeded — please refresh and verify.');
+                        setSaveError('Could not save task. Please verify required fields and assignee selection.');
                         return [2 /*return*/];
                     }
                     onClose();
                     return [3 /*break*/, 5];
                 case 3:
-                    _a = _c.sent();
-                    setSaveError('Could not save to SharePoint. Please try again.');
+                    error_1 = _b.sent();
+                    message = error_1 instanceof Error ? error_1.message : 'Could not save to SharePoint. Please try again.';
+                    setSaveError(message);
                     return [3 /*break*/, 5];
                 case 4:
                     setIsSaving(false);

@@ -98,20 +98,52 @@ const reorderTasksAfterDrag = (tasks: Task[], result: DropResult): Task[] => {
 
 const resolveSharePointUserId = async (email: string, loginName: string): Promise<number | null> => {
   const sp = getSP();
-  if (email?.trim()) {
+
+  const normalizedEmail = (email || '').trim();
+  const normalizedLoginName = (loginName || '').trim();
+  const tryEnsure = async (value: string): Promise<number | null> => {
+    if (!value) {
+      return null;
+    }
+
     try {
-      const user = await sp.web.siteUsers.getByEmail(email.trim())();
+      const ensured = await sp.web.ensureUser(value);
+      const ensuredAny = ensured as any;
+      return ensuredAny?.Id ?? ensuredAny?.data?.Id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  if (normalizedEmail) {
+    try {
+      const user = await sp.web.siteUsers.getByEmail(normalizedEmail)();
       if (user?.Id) return user.Id;
     } catch { /* fall through to loginName */ }
+
+    const claimId = await tryEnsure(`i:0#.f|membership|${normalizedEmail}`);
+    if (claimId) return claimId;
   }
-  if (loginName?.trim()) {
-    try {
-      const user = await sp.web.ensureUser(loginName.trim());
-      const userAny = user as any;
-      if (userAny?.Id) return userAny.Id;
-      if (userAny?.data?.Id) return userAny.data.Id;
-    } catch { /* unresolvable */ }
+
+  if (normalizedLoginName) {
+    const ensuredLoginId = await tryEnsure(normalizedLoginName);
+    if (ensuredLoginId) return ensuredLoginId;
+
+    const lower = normalizedLoginName.toLowerCase();
+    if (lower.indexOf('@') > -1 && lower.indexOf('|') === -1) {
+      const claimId = await tryEnsure(`i:0#.f|membership|${normalizedLoginName}`);
+      if (claimId) return claimId;
+    }
+
+    const maybeEmail = lower.indexOf('|') > -1 ? normalizedLoginName.split('|').pop()?.trim() || '' : '';
+    if (maybeEmail) {
+      try {
+        const user = await sp.web.siteUsers.getByEmail(maybeEmail)();
+        if (user?.Id) return user.Id;
+      } catch { /* no-op */ }
+    }
   }
+
   return null;
 };
 
@@ -152,8 +184,14 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         const user = await sp.web.currentUser();
         setCurrentUserName(user.Title || '');
 
-        const role = await getUserRole(user.Email);
-        setCanAssign(role?.canAssign === true);
+        try {
+          const role = await getUserRole(user.Email || '');
+          setCanAssign(role?.canAssign === true);
+        } catch (roleError) {
+          // Role lookup should not block task loading.
+          console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
+          setCanAssign(false);
+        }
 
         const data = await taskService.getTasks();
 
@@ -276,6 +314,15 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
       }
 
       if (!finalAssigneeId || finalAssigneeId <= 0) {
+        if (task.assignedToEmail || task.assignedToLoginName || task.assignedTo) {
+          const message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
+          console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
+            email: task.assignedToEmail,
+            loginName: task.assignedToLoginName,
+            name: task.assignedTo
+          });
+          throw new Error(message);
+        }
         finalAssigneeId = null;
         finalAssigneeName = '';
       }
@@ -334,7 +381,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
       }
     } catch (error) {
       console.error('TaskBoard: saveTask failed', error);
-      return null;
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Could not save task to SharePoint.');
     }
   };
 

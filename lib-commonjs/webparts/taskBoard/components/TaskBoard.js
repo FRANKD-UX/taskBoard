@@ -75,17 +75,43 @@ var reorderTasksAfterDrag = function (tasks, result) {
     return TASK_STATUSES.reduce(function (acc, s) { return acc.concat(grouped[s]); }, []);
 };
 var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, user, _a, user, userAny, _b;
+    var sp, normalizedEmail, normalizedLoginName, tryEnsure, user, _a, claimId, ensuredLoginId, lower, claimId, maybeEmail, user, _b;
     var _c;
     return tslib_1.__generator(this, function (_d) {
         switch (_d.label) {
             case 0:
                 sp = (0, pnpjsConfig_1.getSP)();
-                if (!(email === null || email === void 0 ? void 0 : email.trim())) return [3 /*break*/, 4];
+                normalizedEmail = (email || '').trim();
+                normalizedLoginName = (loginName || '').trim();
+                tryEnsure = function (value) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+                    var ensured, ensuredAny, _a;
+                    var _b, _c, _d;
+                    return tslib_1.__generator(this, function (_e) {
+                        switch (_e.label) {
+                            case 0:
+                                if (!value) {
+                                    return [2 /*return*/, null];
+                                }
+                                _e.label = 1;
+                            case 1:
+                                _e.trys.push([1, 3, , 4]);
+                                return [4 /*yield*/, sp.web.ensureUser(value)];
+                            case 2:
+                                ensured = _e.sent();
+                                ensuredAny = ensured;
+                                return [2 /*return*/, (_d = (_b = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _b !== void 0 ? _b : (_c = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _c === void 0 ? void 0 : _c.Id) !== null && _d !== void 0 ? _d : null];
+                            case 3:
+                                _a = _e.sent();
+                                return [2 /*return*/, null];
+                            case 4: return [2 /*return*/];
+                        }
+                    });
+                }); };
+                if (!normalizedEmail) return [3 /*break*/, 6];
                 _d.label = 1;
             case 1:
                 _d.trys.push([1, 3, , 4]);
-                return [4 /*yield*/, sp.web.siteUsers.getByEmail(email.trim())()];
+                return [4 /*yield*/, sp.web.siteUsers.getByEmail(normalizedEmail)()];
             case 2:
                 user = _d.sent();
                 if (user === null || user === void 0 ? void 0 : user.Id)
@@ -94,24 +120,43 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
             case 3:
                 _a = _d.sent();
                 return [3 /*break*/, 4];
-            case 4:
-                if (!(loginName === null || loginName === void 0 ? void 0 : loginName.trim())) return [3 /*break*/, 8];
-                _d.label = 5;
+            case 4: return [4 /*yield*/, tryEnsure("i:0#.f|membership|".concat(normalizedEmail))];
             case 5:
-                _d.trys.push([5, 7, , 8]);
-                return [4 /*yield*/, sp.web.ensureUser(loginName.trim())];
+                claimId = _d.sent();
+                if (claimId)
+                    return [2 /*return*/, claimId];
+                _d.label = 6;
             case 6:
-                user = _d.sent();
-                userAny = user;
-                if (userAny === null || userAny === void 0 ? void 0 : userAny.Id)
-                    return [2 /*return*/, userAny.Id];
-                if ((_c = userAny === null || userAny === void 0 ? void 0 : userAny.data) === null || _c === void 0 ? void 0 : _c.Id)
-                    return [2 /*return*/, userAny.data.Id];
-                return [3 /*break*/, 8];
+                if (!normalizedLoginName) return [3 /*break*/, 13];
+                return [4 /*yield*/, tryEnsure(normalizedLoginName)];
             case 7:
+                ensuredLoginId = _d.sent();
+                if (ensuredLoginId)
+                    return [2 /*return*/, ensuredLoginId];
+                lower = normalizedLoginName.toLowerCase();
+                if (!(lower.indexOf('@') > -1 && lower.indexOf('|') === -1)) return [3 /*break*/, 9];
+                return [4 /*yield*/, tryEnsure("i:0#.f|membership|".concat(normalizedLoginName))];
+            case 8:
+                claimId = _d.sent();
+                if (claimId)
+                    return [2 /*return*/, claimId];
+                _d.label = 9;
+            case 9:
+                maybeEmail = lower.indexOf('|') > -1 ? ((_c = normalizedLoginName.split('|').pop()) === null || _c === void 0 ? void 0 : _c.trim()) || '' : '';
+                if (!maybeEmail) return [3 /*break*/, 13];
+                _d.label = 10;
+            case 10:
+                _d.trys.push([10, 12, , 13]);
+                return [4 /*yield*/, sp.web.siteUsers.getByEmail(maybeEmail)()];
+            case 11:
+                user = _d.sent();
+                if (user === null || user === void 0 ? void 0 : user.Id)
+                    return [2 /*return*/, user.Id];
+                return [3 /*break*/, 13];
+            case 12:
                 _b = _d.sent();
-                return [3 /*break*/, 8];
-            case 8: return [2 /*return*/, null];
+                return [3 /*break*/, 13];
+            case 13: return [2 /*return*/, null];
         }
     });
 }); };
@@ -141,23 +186,33 @@ var TaskBoard = function (_a) {
     // ---------------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
         var loadTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var sp, user_1, role, data, error_1;
+            var sp, user_1, role, roleError_1, data, error_1;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        _a.trys.push([0, 4, 5, 6]);
+                        _a.trys.push([0, 7, 8, 9]);
                         setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
                     case 1:
                         user_1 = _a.sent();
                         setCurrentUserName(user_1.Title || '');
-                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user_1.Email)];
+                        _a.label = 2;
                     case 2:
+                        _a.trys.push([2, 4, , 5]);
+                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user_1.Email || '')];
+                    case 3:
                         role = _a.sent();
                         setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
-                        return [4 /*yield*/, taskService.getTasks()];
-                    case 3:
+                        return [3 /*break*/, 5];
+                    case 4:
+                        roleError_1 = _a.sent();
+                        // Role lookup should not block task loading.
+                        console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError_1);
+                        setCanAssign(false);
+                        return [3 /*break*/, 5];
+                    case 5: return [4 /*yield*/, taskService.getTasks()];
+                    case 6:
                         data = _a.sent();
                         setTasks(data.map(function (t) { return ({
                             id: t.id.toString(),
@@ -176,15 +231,15 @@ var TaskBoard = function (_a) {
                             description: t.description,
                             createdBy: user_1.Title,
                         }); }));
-                        return [3 /*break*/, 6];
-                    case 4:
+                        return [3 /*break*/, 9];
+                    case 7:
                         error_1 = _a.sent();
                         console.error('TaskBoard: load failed', error_1);
-                        return [3 /*break*/, 6];
-                    case 5:
+                        return [3 /*break*/, 9];
+                    case 8:
                         setIsLoading(false);
                         return [7 /*endfinally*/];
-                    case 6: return [2 /*return*/];
+                    case 9: return [2 /*return*/];
                 }
             });
         }); };
@@ -269,7 +324,7 @@ var TaskBoard = function (_a) {
     // Save — handles both create and update via TaskModal's onSave prop
     // ---------------------------------------------------------------------------
     var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var isNew, finalAssigneeId, finalAssigneeName, resolved, normaliseDate, payload, created, persisted_1, updated_1, error_3;
+        var isNew, finalAssigneeId, finalAssigneeName, resolved, message, normaliseDate, payload, created, persisted_1, updated_1, error_3;
         var _a;
         return tslib_1.__generator(this, function (_b) {
             switch (_b.label) {
@@ -287,6 +342,15 @@ var TaskBoard = function (_a) {
                     _b.label = 2;
                 case 2:
                     if (!finalAssigneeId || finalAssigneeId <= 0) {
+                        if (task.assignedToEmail || task.assignedToLoginName || task.assignedTo) {
+                            message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
+                            console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
+                                email: task.assignedToEmail,
+                                loginName: task.assignedToLoginName,
+                                name: task.assignedTo
+                            });
+                            throw new Error(message);
+                        }
                         finalAssigneeId = null;
                         finalAssigneeName = '';
                     }
@@ -330,7 +394,10 @@ var TaskBoard = function (_a) {
                 case 7:
                     error_3 = _b.sent();
                     console.error('TaskBoard: saveTask failed', error_3);
-                    return [2 /*return*/, null];
+                    if (error_3 instanceof Error) {
+                        throw error_3;
+                    }
+                    throw new Error('Could not save task to SharePoint.');
                 case 8: return [2 /*return*/];
             }
         });

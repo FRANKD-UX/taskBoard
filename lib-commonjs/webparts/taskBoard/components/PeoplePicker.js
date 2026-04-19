@@ -6,11 +6,27 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var sp_http_1 = require("@microsoft/sp-http");
 require("@pnp/sp/webs");
+require("@pnp/sp/lists");
+require("@pnp/sp/items");
 require("@pnp/sp/site-users");
+require("@pnp/sp/site-users/web");
 var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var theme_1 = require("./theme");
+var extractEmailFromLoginName = function (loginName) {
+    if (!loginName) {
+        return '';
+    }
+    var lowered = loginName.toLowerCase();
+    if (lowered.indexOf('|') > -1) {
+        var parts = loginName.split('|');
+        return parts[parts.length - 1].trim();
+    }
+    return loginName.indexOf('@') > -1 ? loginName.trim() : '';
+};
 var DEBOUNCE_MS = 300;
 var MIN_SEARCH_CHARS = 2;
+var disableDirectoryEndpointSearch = false;
+var disableRestSiteUsersSearch = false;
 var AVATAR_PALETTE = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 var getInitials = function (name) {
     if (!name || name === 'Unassigned')
@@ -55,53 +71,99 @@ var mergeUniqueUsers = function (users) {
     return Array.from(merged.values());
 };
 var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var context, webUrl, requestBody, endpoint, response, payload, rawResults, parsed;
-    var _a, _b, _c;
-    return tslib_1.__generator(this, function (_d) {
-        switch (_d.label) {
+    var context, webUrl, endpoint, baseQueryParams, payloadCandidates, parsed, sawBadRequest, _i, payloadCandidates_1, requestBody, response, payload, rawResults, _a;
+    var _b, _c, _d;
+    return tslib_1.__generator(this, function (_e) {
+        switch (_e.label) {
             case 0:
+                if (disableDirectoryEndpointSearch) {
+                    return [2 /*return*/, []];
+                }
                 context = getSpfxContext();
                 webUrl = getWebUrlForPicker(siteUrl);
                 if (!context || !webUrl) {
                     return [2 /*return*/, []];
                 }
-                requestBody = {
-                    queryParams: JSON.stringify({
-                        QueryString: query,
-                        AllowEmailAddresses: true,
-                        AllowMultipleEntities: false,
-                        AllUrlZones: false,
-                        MaximumEntitySuggestions: 10,
-                        PrincipalSource: 15,
-                        PrincipalType: 1
-                    })
-                };
                 endpoint = "".concat(webUrl, "/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser");
+                baseQueryParams = {
+                    QueryString: query,
+                    AllowEmailAddresses: true,
+                    AllowMultipleEntities: false,
+                    AllUrlZones: true,
+                    MaximumEntitySuggestions: 10,
+                    PrincipalSource: 15,
+                    PrincipalType: 1
+                };
+                payloadCandidates = [
+                    {
+                        queryParams: tslib_1.__assign({ __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' } }, baseQueryParams)
+                    },
+                    {
+                        queryParams: JSON.stringify(tslib_1.__assign({ __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' } }, baseQueryParams))
+                    },
+                    {
+                        queryParams: JSON.stringify(baseQueryParams)
+                    }
+                ];
+                parsed = [];
+                sawBadRequest = false;
+                _i = 0, payloadCandidates_1 = payloadCandidates;
+                _e.label = 1;
+            case 1:
+                if (!(_i < payloadCandidates_1.length)) return [3 /*break*/, 7];
+                requestBody = payloadCandidates_1[_i];
+                _e.label = 2;
+            case 2:
+                _e.trys.push([2, 5, , 6]);
                 return [4 /*yield*/, context.spHttpClient.post(endpoint, sp_http_1.SPHttpClient.configurations.v1, {
                         headers: {
                             accept: 'application/json;odata=nometadata',
-                            'content-type': 'application/json;odata=nometadata'
+                            'content-type': 'application/json;odata=verbose',
+                            'odata-version': ''
                         },
                         body: JSON.stringify(requestBody)
                     })];
-            case 1:
-                response = _d.sent();
+            case 3:
+                response = _e.sent();
                 if (!response.ok) {
-                    return [2 /*return*/, []];
+                    if (response.status === 400 || response.status === 406) {
+                        sawBadRequest = true;
+                    }
+                    return [3 /*break*/, 6];
                 }
                 return [4 /*yield*/, response.json()];
-            case 2:
-                payload = (_d.sent());
-                rawResults = (_c = (_a = payload.value) !== null && _a !== void 0 ? _a : (_b = payload.d) === null || _b === void 0 ? void 0 : _b.ClientPeoplePickerSearchUser) !== null && _c !== void 0 ? _c : '[]';
-                parsed = JSON.parse(rawResults) || [];
+            case 4:
+                payload = (_e.sent());
+                rawResults = (_d = (_b = payload.value) !== null && _b !== void 0 ? _b : (_c = payload.d) === null || _c === void 0 ? void 0 : _c.ClientPeoplePickerSearchUser) !== null && _d !== void 0 ? _d : '[]';
+                parsed =
+                    typeof rawResults === 'string'
+                        ? (JSON.parse(rawResults) || [])
+                        : (rawResults || []);
+                if (parsed.length > 0) {
+                    return [3 /*break*/, 7];
+                }
+                return [3 /*break*/, 6];
+            case 5:
+                _a = _e.sent();
+                return [3 /*break*/, 6];
+            case 6:
+                _i++;
+                return [3 /*break*/, 1];
+            case 7:
+                if (parsed.length === 0 && sawBadRequest) {
+                    disableDirectoryEndpointSearch = true;
+                }
                 return [2 /*return*/, parsed
+                        .filter(function (entry) { return !entry.EntityType || entry.EntityType.toLowerCase() === 'user'; })
                         .map(function (entry) {
-                        var _a, _b;
-                        var email = (((_a = entry.EntityData) === null || _a === void 0 ? void 0 : _a.Email) || entry.Description || '').trim();
-                        var loginName = (entry.Key || ((_b = entry.EntityData) === null || _b === void 0 ? void 0 : _b.PrincipalName) || '').trim();
+                        var _a, _b, _c, _d;
+                        var loginName = (entry.Key || ((_a = entry.EntityData) === null || _a === void 0 ? void 0 : _a.PrincipalName) || ((_b = entry.EntityData) === null || _b === void 0 ? void 0 : _b.AccountName) || '').trim();
+                        var email = (((_c = entry.EntityData) === null || _c === void 0 ? void 0 : _c.Email) || extractEmailFromLoginName(loginName) || '').trim();
                         var name = (entry.DisplayText || email || loginName).trim();
+                        var spUserIdRaw = (_d = entry.EntityData) === null || _d === void 0 ? void 0 : _d.SPUserID;
+                        var spUserId = spUserIdRaw ? Number(spUserIdRaw) : NaN;
                         return {
-                            id: null,
+                            id: Number.isFinite(spUserId) && spUserId > 0 ? spUserId : null,
                             name: name,
                             email: email,
                             loginName: loginName
@@ -112,13 +174,13 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
     });
 }); };
 var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, trimmed, escaped, results, exact, _a, users, _b, users;
+    var sp, trimmed, normalizedQuery, results, exact, _a, users, _b;
     return tslib_1.__generator(this, function (_c) {
         switch (_c.label) {
             case 0:
                 sp = (0, pnpjsConfig_1.getSP)();
                 trimmed = query.trim();
-                escaped = trimmed.replace(/'/g, "''");
+                normalizedQuery = trimmed.toLowerCase();
                 results = [];
                 if (!trimmed.includes('@')) return [3 /*break*/, 4];
                 _c.label = 1;
@@ -140,33 +202,18 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
                 _a = _c.sent();
                 return [3 /*break*/, 4];
             case 4:
-                _c.trys.push([4, 6, , 8]);
-                return [4 /*yield*/, sp.web.siteUsers
-                        .select('Id', 'Title', 'Email', 'LoginName')
-                        .filter("startswith(Title,'".concat(escaped, "') or startswith(Email,'").concat(escaped, "')"))
-                        .top(10)()];
+                _c.trys.push([4, 6, , 7]);
+                return [4 /*yield*/, sp.web.siteUsers.select('Id', 'Title', 'Email', 'LoginName').top(500)()];
             case 5:
-                users = _c.sent();
-                users.forEach(function (user) {
-                    var _a;
-                    results.push({
-                        id: (_a = user.Id) !== null && _a !== void 0 ? _a : null,
-                        name: user.Title || user.Email || user.LoginName || '',
-                        email: user.Email || '',
-                        loginName: user.LoginName || ''
-                    });
-                });
-                return [3 /*break*/, 8];
-            case 6:
-                _b = _c.sent();
-                return [4 /*yield*/, sp.web.siteUsers.select('Id', 'Title', 'Email', 'LoginName').top(200)()];
-            case 7:
                 users = _c.sent();
                 users
                     .filter(function (user) {
                     var title = String(user.Title || '').toLowerCase();
                     var email = String(user.Email || '').toLowerCase();
-                    return title.indexOf(trimmed.toLowerCase()) > -1 || email.indexOf(trimmed.toLowerCase()) > -1;
+                    var loginName = String(user.LoginName || '').toLowerCase();
+                    return (title.indexOf(normalizedQuery) > -1 ||
+                        email.indexOf(normalizedQuery) > -1 ||
+                        loginName.indexOf(normalizedQuery) > -1);
                 })
                     .slice(0, 10)
                     .forEach(function (user) {
@@ -174,17 +221,125 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
                     results.push({
                         id: (_a = user.Id) !== null && _a !== void 0 ? _a : null,
                         name: user.Title || user.Email || user.LoginName || '',
-                        email: user.Email || '',
+                        email: user.Email || extractEmailFromLoginName(user.LoginName || ''),
                         loginName: user.LoginName || ''
                     });
                 });
-                return [3 /*break*/, 8];
-            case 8: return [2 /*return*/, mergeUniqueUsers(results)];
+                return [3 /*break*/, 7];
+            case 6:
+                _b = _c.sent();
+                return [3 /*break*/, 7];
+            case 7: return [2 /*return*/, mergeUniqueUsers(results)];
+        }
+    });
+}); };
+var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var context, webUrl, response, payload, users, normalizedQuery_1, _a;
+    var _b, _c, _d;
+    return tslib_1.__generator(this, function (_e) {
+        switch (_e.label) {
+            case 0:
+                if (disableRestSiteUsersSearch) {
+                    return [2 /*return*/, []];
+                }
+                context = getSpfxContext();
+                webUrl = getWebUrlForPicker(siteUrl);
+                if (!context || !webUrl) {
+                    return [2 /*return*/, []];
+                }
+                _e.label = 1;
+            case 1:
+                _e.trys.push([1, 4, , 5]);
+                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, {
+                        headers: {
+                            accept: 'application/json;odata=verbose'
+                        }
+                    })];
+            case 2:
+                response = _e.sent();
+                if (!response.ok) {
+                    if (response.status === 406 || response.status === 400) {
+                        disableRestSiteUsersSearch = true;
+                    }
+                    return [2 /*return*/, []];
+                }
+                return [4 /*yield*/, response.json()];
+            case 3:
+                payload = (_e.sent());
+                users = (_d = (_b = payload.value) !== null && _b !== void 0 ? _b : (_c = payload.d) === null || _c === void 0 ? void 0 : _c.results) !== null && _d !== void 0 ? _d : [];
+                normalizedQuery_1 = query.trim().toLowerCase();
+                return [2 /*return*/, users
+                        .filter(function (user) {
+                        var title = String(user.Title || '').toLowerCase();
+                        var email = String(user.Email || user.EMail || '').toLowerCase();
+                        var loginName = String(user.LoginName || '').toLowerCase();
+                        return title.indexOf(normalizedQuery_1) > -1 || email.indexOf(normalizedQuery_1) > -1 || loginName.indexOf(normalizedQuery_1) > -1;
+                    })
+                        .slice(0, 10)
+                        .map(function (user) {
+                        var _a;
+                        return ({
+                            id: (_a = user.Id) !== null && _a !== void 0 ? _a : null,
+                            name: user.Title || user.Email || user.EMail || user.LoginName || '',
+                            email: user.Email || user.EMail || extractEmailFromLoginName(user.LoginName || ''),
+                            loginName: user.LoginName || ''
+                        });
+                    })];
+            case 4:
+                _a = _e.sent();
+                disableRestSiteUsersSearch = true;
+                return [2 /*return*/, []];
+            case 5: return [2 /*return*/];
+        }
+    });
+}); };
+var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var sp, normalizedQuery, items, _a;
+    return tslib_1.__generator(this, function (_b) {
+        switch (_b.label) {
+            case 0:
+                sp = (0, pnpjsConfig_1.getSP)();
+                normalizedQuery = query.trim().toLowerCase();
+                _b.label = 1;
+            case 1:
+                _b.trys.push([1, 3, , 4]);
+                return [4 /*yield*/, sp.web.lists
+                        .getByTitle('UserRoles')
+                        .items.select('User/Id', 'User/Title', 'User/EMail', 'User/LoginName', 'IsActive')
+                        .expand('User')
+                        .top(200)()];
+            case 2:
+                items = _b.sent();
+                return [2 /*return*/, items
+                        .filter(function (item) { return (item === null || item === void 0 ? void 0 : item.IsActive) !== false && (item === null || item === void 0 ? void 0 : item.User); })
+                        .map(function (item) {
+                        var _a;
+                        var user = Array.isArray(item.User) ? item.User[0] : item.User;
+                        return {
+                            id: (_a = user === null || user === void 0 ? void 0 : user.Id) !== null && _a !== void 0 ? _a : null,
+                            name: (user === null || user === void 0 ? void 0 : user.Title) || '',
+                            email: (user === null || user === void 0 ? void 0 : user.EMail) || '',
+                            loginName: (user === null || user === void 0 ? void 0 : user.LoginName) || ''
+                        };
+                    })
+                        .filter(function (user) {
+                        var title = String(user.name || '').toLowerCase();
+                        var email = String(user.email || '').toLowerCase();
+                        var loginName = String(user.loginName || '').toLowerCase();
+                        return (title.indexOf(normalizedQuery) > -1 ||
+                            email.indexOf(normalizedQuery) > -1 ||
+                            loginName.indexOf(normalizedQuery) > -1);
+                    })
+                        .slice(0, 10)];
+            case 3:
+                _a = _b.sent();
+                return [2 /*return*/, []];
+            case 4: return [2 /*return*/];
         }
     });
 }); };
 var searchUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var trimmed, _a, directoryUsers, siteUsers, merged, error_1;
+    var trimmed, _a, siteUsers, roleUsers, restSiteUsers, directoryUsers, merged, error_1;
     return tslib_1.__generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -196,12 +351,14 @@ var searchUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, v
             case 1:
                 _b.trys.push([1, 3, , 4]);
                 return [4 /*yield*/, Promise.all([
+                        searchSiteUsers(trimmed).catch(function () { return []; }),
+                        searchUsersFromUserRoles(trimmed).catch(function () { return []; }),
+                        searchSiteUsersViaRest(trimmed, siteUrl).catch(function () { return []; }),
                         searchDirectoryUsers(trimmed, siteUrl).catch(function () { return []; }),
-                        searchSiteUsers(trimmed).catch(function () { return []; })
                     ])];
             case 2:
-                _a = _b.sent(), directoryUsers = _a[0], siteUsers = _a[1];
-                merged = mergeUniqueUsers(tslib_1.__spreadArray(tslib_1.__spreadArray([], siteUsers, true), directoryUsers, true));
+                _a = _b.sent(), siteUsers = _a[0], roleUsers = _a[1], restSiteUsers = _a[2], directoryUsers = _a[3];
+                merged = mergeUniqueUsers(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray([], siteUsers, true), roleUsers, true), restSiteUsers, true), directoryUsers, true));
                 return [2 /*return*/, merged.slice(0, 10)];
             case 3:
                 error_1 = _b.sent();
@@ -212,27 +369,27 @@ var searchUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, v
     });
 }); };
 var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, ensured, ensuredAny, id, email, name_1, loginName, _a, user, _b;
-    var _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
-    return tslib_1.__generator(this, function (_q) {
-        switch (_q.label) {
+    var sp, ensured, ensuredAny, id, email, name_1, loginName, _a, ensured, ensuredAny, id, _b, user, _c;
+    var _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2;
+    return tslib_1.__generator(this, function (_3) {
+        switch (_3.label) {
             case 0:
                 if (candidate.id && candidate.id > 0) {
                     return [2 /*return*/, candidate];
                 }
                 sp = (0, pnpjsConfig_1.getSP)();
                 if (!candidate.loginName) return [3 /*break*/, 4];
-                _q.label = 1;
+                _3.label = 1;
             case 1:
-                _q.trys.push([1, 3, , 4]);
+                _3.trys.push([1, 3, , 4]);
                 return [4 /*yield*/, sp.web.ensureUser(candidate.loginName)];
             case 2:
-                ensured = _q.sent();
+                ensured = _3.sent();
                 ensuredAny = ensured;
-                id = (_e = (_c = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _c !== void 0 ? _c : (_d = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _d === void 0 ? void 0 : _d.Id) !== null && _e !== void 0 ? _e : null;
-                email = (_h = (_f = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Email) !== null && _f !== void 0 ? _f : (_g = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _g === void 0 ? void 0 : _g.Email) !== null && _h !== void 0 ? _h : candidate.email;
-                name_1 = (_l = (_j = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Title) !== null && _j !== void 0 ? _j : (_k = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _k === void 0 ? void 0 : _k.Title) !== null && _l !== void 0 ? _l : candidate.name;
-                loginName = (_p = (_m = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.LoginName) !== null && _m !== void 0 ? _m : (_o = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _o === void 0 ? void 0 : _o.LoginName) !== null && _p !== void 0 ? _p : candidate.loginName;
+                id = (_f = (_d = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _d !== void 0 ? _d : (_e = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _e === void 0 ? void 0 : _e.Id) !== null && _f !== void 0 ? _f : null;
+                email = (_j = (_g = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Email) !== null && _g !== void 0 ? _g : (_h = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _h === void 0 ? void 0 : _h.Email) !== null && _j !== void 0 ? _j : candidate.email;
+                name_1 = (_m = (_k = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Title) !== null && _k !== void 0 ? _k : (_l = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _l === void 0 ? void 0 : _l.Title) !== null && _m !== void 0 ? _m : candidate.name;
+                loginName = (_q = (_o = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.LoginName) !== null && _o !== void 0 ? _o : (_p = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _p === void 0 ? void 0 : _p.LoginName) !== null && _q !== void 0 ? _q : candidate.loginName;
                 if (id) {
                     return [2 /*return*/, {
                             id: id,
@@ -243,16 +400,38 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
                 }
                 return [3 /*break*/, 4];
             case 3:
-                _a = _q.sent();
+                _a = _3.sent();
                 return [3 /*break*/, 4];
             case 4:
                 if (!candidate.email) return [3 /*break*/, 8];
-                _q.label = 5;
+                _3.label = 5;
             case 5:
-                _q.trys.push([5, 7, , 8]);
-                return [4 /*yield*/, sp.web.siteUsers.getByEmail(candidate.email)()];
+                _3.trys.push([5, 7, , 8]);
+                return [4 /*yield*/, sp.web.ensureUser("i:0#.f|membership|".concat(candidate.email))];
             case 6:
-                user = _q.sent();
+                ensured = _3.sent();
+                ensuredAny = ensured;
+                id = (_t = (_r = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _r !== void 0 ? _r : (_s = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _s === void 0 ? void 0 : _s.Id) !== null && _t !== void 0 ? _t : null;
+                if (id) {
+                    return [2 /*return*/, {
+                            id: id,
+                            name: (_w = (_u = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Title) !== null && _u !== void 0 ? _u : (_v = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _v === void 0 ? void 0 : _v.Title) !== null && _w !== void 0 ? _w : candidate.name,
+                            email: (_z = (_x = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Email) !== null && _x !== void 0 ? _x : (_y = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _y === void 0 ? void 0 : _y.Email) !== null && _z !== void 0 ? _z : candidate.email,
+                            loginName: (_2 = (_0 = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.LoginName) !== null && _0 !== void 0 ? _0 : (_1 = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _1 === void 0 ? void 0 : _1.LoginName) !== null && _2 !== void 0 ? _2 : candidate.loginName
+                        }];
+                }
+                return [3 /*break*/, 8];
+            case 7:
+                _b = _3.sent();
+                return [3 /*break*/, 8];
+            case 8:
+                if (!candidate.email) return [3 /*break*/, 12];
+                _3.label = 9;
+            case 9:
+                _3.trys.push([9, 11, , 12]);
+                return [4 /*yield*/, sp.web.siteUsers.getByEmail(candidate.email)()];
+            case 10:
+                user = _3.sent();
                 if (user === null || user === void 0 ? void 0 : user.Id) {
                     return [2 /*return*/, {
                             id: user.Id,
@@ -261,11 +440,11 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
                             loginName: user.LoginName || candidate.loginName
                         }];
                 }
-                return [3 /*break*/, 8];
-            case 7:
-                _b = _q.sent();
-                return [3 /*break*/, 8];
-            case 8: return [2 /*return*/, candidate];
+                return [3 /*break*/, 12];
+            case 11:
+                _c = _3.sent();
+                return [3 /*break*/, 12];
+            case 12: return [2 /*return*/, candidate];
         }
     });
 }); };

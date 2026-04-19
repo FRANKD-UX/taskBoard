@@ -16,7 +16,7 @@ var TaskService = /** @class */ (function () {
     }
     TaskService.prototype.getTasks = function () {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, listTitle, assigneeField, assigneeLookupField, items;
+            var sp, listTitle, assigneeField, assigneeLookupField, mapItem, items, primaryError_1, minimalItems, minimalError_1, fallbackItems;
             var _this = this;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
@@ -29,47 +29,78 @@ var TaskService = /** @class */ (function () {
                     case 2:
                         assigneeField = _a.sent();
                         assigneeLookupField = "".concat(assigneeField.internalName, "Id");
+                        mapItem = function (item) {
+                            var _a, _b, _c, _d, _e;
+                            var assignee = _this.getPrimaryAssignee((_a = item[assigneeField.internalName]) !== null && _a !== void 0 ? _a : item.AssignedTo);
+                            var fallbackAssigneeId = _this.getPrimaryAssigneeId((_b = item[assigneeLookupField]) !== null && _b !== void 0 ? _b : item.AssignedToId);
+                            return {
+                                id: item.Id,
+                                title: item.Title || '',
+                                status: item.Status || 'Unassigned',
+                                priority: item.Priority || 'Medium',
+                                assignedTo: assignee === null || assignee === void 0 ? void 0 : assignee.Title,
+                                assignedToId: (_d = (_c = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _c !== void 0 ? _c : fallbackAssigneeId) !== null && _d !== void 0 ? _d : null,
+                                assignedToEmail: (_e = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _e !== void 0 ? _e : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
+                                assignedToLoginName: assignee === null || assignee === void 0 ? void 0 : assignee.LoginName,
+                                startDate: item.StartDate,
+                                dueDate: item.DueDate,
+                                description: item.Description,
+                                requestType: item.RequestType || 'Task',
+                                department: item.Department || 'IT'
+                            };
+                        };
+                        _a.label = 3;
+                    case 3:
+                        _a.trys.push([3, 5, , 11]);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.select('Id', 'Title', 'Status', 'Priority', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), "".concat(assigneeField.internalName, "/Email"), "".concat(assigneeField.internalName, "/EMail"), "".concat(assigneeField.internalName, "/LoginName"), assigneeLookupField)
-                                .expand(assigneeField.internalName)()];
-                    case 3:
+                                .items.select('Id', 'Title', 'Status', 'Priority', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), "".concat(assigneeField.internalName, "/EMail"), "".concat(assigneeField.internalName, "/LoginName"), assigneeLookupField)
+                                .expand(assigneeField.internalName)
+                                .top(500)()];
+                    case 4:
                         items = _a.sent();
-                        return [2 /*return*/, items.map(function (item) {
-                                var _a, _b, _c;
-                                var assignee = _this.getPrimaryAssignee(item[assigneeField.internalName]);
-                                var fallbackAssigneeId = _this.getPrimaryAssigneeId(item[assigneeLookupField]);
-                                return {
-                                    id: item.Id,
-                                    title: item.Title,
-                                    status: item.Status,
-                                    priority: item.Priority,
-                                    assignedTo: assignee === null || assignee === void 0 ? void 0 : assignee.Title,
-                                    assignedToId: (_b = (_a = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _a !== void 0 ? _a : fallbackAssigneeId) !== null && _b !== void 0 ? _b : null,
-                                    assignedToEmail: (_c = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _c !== void 0 ? _c : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
-                                    assignedToLoginName: assignee === null || assignee === void 0 ? void 0 : assignee.LoginName,
-                                    startDate: item.StartDate,
-                                    dueDate: item.DueDate,
-                                    description: item.Description,
-                                    requestType: item.RequestType,
-                                    department: item.Department
-                                };
-                            })];
+                        return [2 /*return*/, items.map(mapItem)];
+                    case 5:
+                        primaryError_1 = _a.sent();
+                        console.warn('TaskService.getTasks: full typed query failed, trying minimal expanded query.', primaryError_1);
+                        _a.label = 6;
+                    case 6:
+                        _a.trys.push([6, 8, , 9]);
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(listTitle)
+                                .items.select('Id', 'Title', 'Status', 'Priority', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), assigneeLookupField)
+                                .expand(assigneeField.internalName)
+                                .top(500)()];
+                    case 7:
+                        minimalItems = _a.sent();
+                        return [2 /*return*/, minimalItems.map(mapItem)];
+                    case 8:
+                        minimalError_1 = _a.sent();
+                        console.warn('TaskService.getTasks: minimal expanded query failed, falling back to broad item fetch.', minimalError_1);
+                        return [3 /*break*/, 9];
+                    case 9: return [4 /*yield*/, sp.web.lists
+                            .getByTitle(listTitle)
+                            .items
+                            .top(500)()];
+                    case 10:
+                        fallbackItems = _a.sent();
+                        return [2 /*return*/, fallbackItems.map(mapItem)];
+                    case 11: return [2 /*return*/];
                 }
             });
         });
     };
     TaskService.prototype.createTask = function (task) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, listTitle, payload, assigneeField, result;
-            var _a;
-            return tslib_1.__generator(this, function (_b) {
-                switch (_b.label) {
+            var sp, listTitle, payload, assigneeField, result, createdId;
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+            return tslib_1.__generator(this, function (_k) {
+                switch (_k.label) {
                     case 0:
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, this.getTaskListTitle()];
                     case 1:
-                        listTitle = _b.sent();
+                        listTitle = _k.sent();
                         payload = {
                             Title: task.title,
                             Status: task.status,
@@ -82,14 +113,15 @@ var TaskService = /** @class */ (function () {
                         };
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
                     case 2:
-                        assigneeField = _b.sent();
+                        assigneeField = _k.sent();
                         this.applyAssigneeToPayload(payload, task.assignedToId, assigneeField);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
                                 .items.add(payload)];
                     case 3:
-                        result = _b.sent();
-                        return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, result.data), { id: (_a = result.data.Id) !== null && _a !== void 0 ? _a : result.data.id })];
+                        result = _k.sent();
+                        createdId = (_h = (_f = (_d = (_b = (_a = result === null || result === void 0 ? void 0 : result.data) === null || _a === void 0 ? void 0 : _a.Id) !== null && _b !== void 0 ? _b : (_c = result === null || result === void 0 ? void 0 : result.data) === null || _c === void 0 ? void 0 : _c.ID) !== null && _d !== void 0 ? _d : (_e = result === null || result === void 0 ? void 0 : result.data) === null || _e === void 0 ? void 0 : _e.id) !== null && _f !== void 0 ? _f : (_g = result === null || result === void 0 ? void 0 : result.item) === null || _g === void 0 ? void 0 : _g.Id) !== null && _h !== void 0 ? _h : (_j = result === null || result === void 0 ? void 0 : result.item) === null || _j === void 0 ? void 0 : _j.ID;
+                        return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, result.data), { id: createdId })];
                 }
             });
         });

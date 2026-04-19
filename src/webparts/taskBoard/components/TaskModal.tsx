@@ -259,12 +259,13 @@ const TaskModal: React.FC<ITaskModalProps> = ({
     try {
       const saved = await onSave(draft);
       if (!saved) {
-        setSaveError('Save may have partially succeeded — please refresh and verify.');
+        setSaveError('Could not save task. Please verify required fields and assignee selection.');
         return;
       }
       onClose();
-    } catch {
-      setSaveError('Could not save to SharePoint. Please try again.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save to SharePoint. Please try again.';
+      setSaveError(message);
     } finally {
       setIsSaving(false);
     }

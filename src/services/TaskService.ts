@@ -48,37 +48,15 @@ export class TaskService {
         const listTitle = await this.getTaskListTitle();
         const assigneeField = await this.getAssigneeFieldConfig();
         const assigneeLookupField = `${assigneeField.internalName}Id`;
-
-        const items = await sp.web.lists
-            .getByTitle(listTitle)
-            .items.select(
-                'Id',
-                'Title',
-                'Status',
-                'Priority',
-                'StartDate',
-                'DueDate',
-                'Description',
-                'RequestType',
-                'Department',
-                `${assigneeField.internalName}/Title`,
-                `${assigneeField.internalName}/Id`,
-                `${assigneeField.internalName}/Email`,
-                `${assigneeField.internalName}/EMail`,
-                `${assigneeField.internalName}/LoginName`,
-                assigneeLookupField
-            )
-            .expand(assigneeField.internalName)();
-
-        return items.map((item: any) => {
-            const assignee = this.getPrimaryAssignee(item[assigneeField.internalName]);
-            const fallbackAssigneeId = this.getPrimaryAssigneeId(item[assigneeLookupField]);
+        const mapItem = (item: any): ITask => {
+            const assignee = this.getPrimaryAssignee(item[assigneeField.internalName] ?? item.AssignedTo);
+            const fallbackAssigneeId = this.getPrimaryAssigneeId(item[assigneeLookupField] ?? item.AssignedToId);
 
             return {
                 id: item.Id,
-                title: item.Title,
-                status: item.Status,
-                priority: item.Priority,
+                title: item.Title || '',
+                status: item.Status || 'Unassigned',
+                priority: item.Priority || 'Medium',
                 assignedTo: assignee?.Title,
                 assignedToId: assignee?.Id ?? fallbackAssigneeId ?? null,
                 assignedToEmail: assignee?.Email ?? assignee?.EMail,
@@ -86,10 +64,69 @@ export class TaskService {
                 startDate: item.StartDate,
                 dueDate: item.DueDate,
                 description: item.Description,
-                requestType: item.RequestType,
-                department: item.Department
+                requestType: item.RequestType || 'Task',
+                department: item.Department || 'IT'
             };
-        });
+        };
+
+        try {
+            const items = await sp.web.lists
+                .getByTitle(listTitle)
+                .items.select(
+                    'Id',
+                    'Title',
+                    'Status',
+                    'Priority',
+                    'StartDate',
+                    'DueDate',
+                    'Description',
+                    'RequestType',
+                    'Department',
+                    `${assigneeField.internalName}/Title`,
+                    `${assigneeField.internalName}/Id`,
+                    `${assigneeField.internalName}/EMail`,
+                    `${assigneeField.internalName}/LoginName`,
+                    assigneeLookupField
+                )
+                .expand(assigneeField.internalName)
+                .top(500)();
+
+            return items.map(mapItem);
+        } catch (primaryError) {
+            console.warn('TaskService.getTasks: full typed query failed, trying minimal expanded query.', primaryError);
+
+            try {
+                const minimalItems = await sp.web.lists
+                    .getByTitle(listTitle)
+                    .items.select(
+                        'Id',
+                        'Title',
+                        'Status',
+                        'Priority',
+                        'StartDate',
+                        'DueDate',
+                        'Description',
+                        'RequestType',
+                        'Department',
+                        `${assigneeField.internalName}/Title`,
+                        `${assigneeField.internalName}/Id`,
+                        assigneeLookupField
+                    )
+                    .expand(assigneeField.internalName)
+                    .top(500)();
+
+                return minimalItems.map(mapItem);
+            } catch (minimalError) {
+                console.warn('TaskService.getTasks: minimal expanded query failed, falling back to broad item fetch.', minimalError);
+            }
+
+            const fallbackItems = await sp.web.lists
+                .getByTitle(listTitle)
+                .items
+                .top(500)();
+
+            return fallbackItems.map(mapItem);
+        }
     }
 
     public async createTask(task: any): Promise<any> {
@@ -114,9 +151,16 @@ export class TaskService {
             .getByTitle(listTitle)
             .items.add(payload);
 
+        const createdId =
+            result?.data?.Id ??
+            result?.data?.ID ??
+            result?.data?.id ??
+            result?.item?.Id ??
+            result?.item?.ID;
+
         return {
             ...result.data,
-            id: result.data.Id ?? result.data.id
+            id: createdId
         };
     }
 

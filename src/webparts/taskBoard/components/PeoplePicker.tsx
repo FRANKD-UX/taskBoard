@@ -4,7 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { SPHttpClient } from '@microsoft/sp-http';
 import type { WebPartContext } from '@microsoft/sp-webpart-base';
 import '@pnp/sp/webs';
+import '@pnp/sp/lists';
+import '@pnp/sp/items';
 import '@pnp/sp/site-users';
+import '@pnp/sp/site-users/web';
 
 import { getSP } from '../../../pnpjsConfig';
 import { THEME } from './theme';
@@ -28,14 +31,41 @@ interface IClientPeoplePickerResult {
   Key?: string;
   DisplayText?: string;
   Description?: string;
+  EntityType?: string;
   EntityData?: {
+    SPUserID?: string;
+    AccountName?: string;
     Email?: string;
     PrincipalName?: string;
   };
 }
 
+interface ISiteUserRestItem {
+  Id?: number;
+  Title?: string;
+  LoginName?: string;
+  Email?: string;
+  EMail?: string;
+}
+
+const extractEmailFromLoginName = (loginName: string): string => {
+  if (!loginName) {
+    return '';
+  }
+
+  const lowered = loginName.toLowerCase();
+  if (lowered.indexOf('|') > -1) {
+    const parts = loginName.split('|');
+    return parts[parts.length - 1].trim();
+  }
+
+  return loginName.indexOf('@') > -1 ? loginName.trim() : '';
+};
+
 const DEBOUNCE_MS = 300;
 const MIN_SEARCH_CHARS = 2;
+let disableDirectoryEndpointSearch = false;
+let disableRestSiteUsersSearch = false;
 
 const AVATAR_PALETTE: string[] = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 
@@ -86,6 +116,10 @@ const mergeUniqueUsers = (users: IResolvedUser[]): IResolvedUser[] => {
 };
 
 const searchDirectoryUsers = async (query: string, siteUrl?: string): Promise<IResolvedUser[]> => {
+  if (disableDirectoryEndpointSearch) {
+    return [];
+  }
+
   const context = getSpfxContext();
   const webUrl = getWebUrlForPicker(siteUrl);
 
@@ -93,44 +127,91 @@ const searchDirectoryUsers = async (query: string, siteUrl?: string): Promise<IR
     return [];
   }
 
-  const requestBody = {
-    queryParams: JSON.stringify({
-      QueryString: query,
-      AllowEmailAddresses: true,
-      AllowMultipleEntities: false,
-      AllUrlZones: false,
-      MaximumEntitySuggestions: 10,
-      PrincipalSource: 15,
-      PrincipalType: 1
-    })
-  };
-
   const endpoint = `${webUrl}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser`;
 
-  const response = await context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
-    headers: {
-      accept: 'application/json;odata=nometadata',
-      'content-type': 'application/json;odata=nometadata'
-    },
-    body: JSON.stringify(requestBody)
-  });
+  const baseQueryParams = {
+    QueryString: query,
+    AllowEmailAddresses: true,
+    AllowMultipleEntities: false,
+    AllUrlZones: true,
+    MaximumEntitySuggestions: 10,
+    PrincipalSource: 15,
+    PrincipalType: 1
+  };
 
-  if (!response.ok) {
-    return [];
+  const payloadCandidates = [
+    {
+      queryParams: {
+        __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
+        ...baseQueryParams
+      }
+    },
+    {
+      queryParams: JSON.stringify({
+        __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
+        ...baseQueryParams
+      })
+    },
+    {
+      queryParams: JSON.stringify(baseQueryParams)
+    }
+  ];
+
+  let parsed: IClientPeoplePickerResult[] = [];
+  let sawBadRequest = false;
+
+  for (const requestBody of payloadCandidates) {
+    try {
+      const response = await context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
+        headers: {
+          accept: 'application/json;odata=nometadata',
+          'content-type': 'application/json;odata=verbose',
+          'odata-version': ''
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        if (response.status === 400 || response.status === 406) {
+          sawBadRequest = true;
+        }
+        continue;
+      }
+
+      const payload = (await response.json()) as {
+        value?: string | IClientPeoplePickerResult[];
+        d?: { ClientPeoplePickerSearchUser?: string | IClientPeoplePickerResult[] };
+      };
+
+      const rawResults = payload.value ?? payload.d?.ClientPeoplePickerSearchUser ?? '[]';
+      parsed =
+        typeof rawResults === 'string'
+          ? ((JSON.parse(rawResults) as IClientPeoplePickerResult[]) || [])
+          : (rawResults || []);
+
+      if (parsed.length > 0) {
+        break;
+      }
+    } catch {
+      // try next request body shape
+    }
   }
 
-  const payload = (await response.json()) as { value?: string; d?: { ClientPeoplePickerSearchUser?: string } };
-  const rawResults = payload.value ?? payload.d?.ClientPeoplePickerSearchUser ?? '[]';
-  const parsed = (JSON.parse(rawResults) as IClientPeoplePickerResult[]) || [];
+  if (parsed.length === 0 && sawBadRequest) {
+    disableDirectoryEndpointSearch = true;
+  }
 
   return parsed
+    .filter((entry) => !entry.EntityType || entry.EntityType.toLowerCase() === 'user')
     .map((entry) => {
-      const email = (entry.EntityData?.Email || entry.Description || '').trim();
-      const loginName = (entry.Key || entry.EntityData?.PrincipalName || '').trim();
+      const loginName = (entry.Key || entry.EntityData?.PrincipalName || entry.EntityData?.AccountName || '').trim();
+      const email = (entry.EntityData?.Email || extractEmailFromLoginName(loginName) || '').trim();
       const name = (entry.DisplayText || email || loginName).trim();
+      const spUserIdRaw = entry.EntityData?.SPUserID;
+      const spUserId = spUserIdRaw ? Number(spUserIdRaw) : NaN;
 
       return {
-        id: null,
+        id: Number.isFinite(spUserId) && spUserId > 0 ? spUserId : null,
         name,
         email,
         loginName
@@ -142,7 +223,7 @@ const searchDirectoryUsers = async (query: string, siteUrl?: string): Promise<IR
 const searchSiteUsers = async (query: string): Promise<IResolvedUser[]> => {
   const sp = getSP();
   const trimmed = query.trim();
-  const escaped = trimmed.replace(/'/g, "''");
+  const normalizedQuery = trimmed.toLowerCase();
 
   const results: IResolvedUser[] = [];
 
@@ -163,40 +244,128 @@ const searchSiteUsers = async (query: string): Promise<IResolvedUser[]> => {
   }
 
   try {
-    const users = await sp.web.siteUsers
-      .select('Id', 'Title', 'Email', 'LoginName')
-      .filter(`startswith(Title,'${escaped}') or startswith(Email,'${escaped}')`)
-      .top(10)();
-
-    users.forEach((user: any) => {
-      results.push({
-        id: user.Id ?? null,
-        name: user.Title || user.Email || user.LoginName || '',
-        email: user.Email || '',
-        loginName: user.LoginName || ''
-      });
-    });
-  } catch {
-    const users = await sp.web.siteUsers.select('Id', 'Title', 'Email', 'LoginName').top(200)();
+    const users = await sp.web.siteUsers.select('Id', 'Title', 'Email', 'LoginName').top(500)();
 
     users
       .filter((user: any) => {
         const title = String(user.Title || '').toLowerCase();
         const email = String(user.Email || '').toLowerCase();
-        return title.indexOf(trimmed.toLowerCase()) > -1 || email.indexOf(trimmed.toLowerCase()) > -1;
+        const loginName = String(user.LoginName || '').toLowerCase();
+        return (
+          title.indexOf(normalizedQuery) > -1 ||
+          email.indexOf(normalizedQuery) > -1 ||
+          loginName.indexOf(normalizedQuery) > -1
+        );
       })
       .slice(0, 10)
       .forEach((user: any) => {
         results.push({
           id: user.Id ?? null,
           name: user.Title || user.Email || user.LoginName || '',
-          email: user.Email || '',
+          email: user.Email || extractEmailFromLoginName(user.LoginName || ''),
           loginName: user.LoginName || ''
         });
       });
+  } catch {
+    // keep results from earlier attempts only
   }
 
   return mergeUniqueUsers(results);
+};
+
+const searchSiteUsersViaRest = async (query: string, siteUrl?: string): Promise<IResolvedUser[]> => {
+  if (disableRestSiteUsersSearch) {
+    return [];
+  }
+
+  const context = getSpfxContext();
+  const webUrl = getWebUrlForPicker(siteUrl);
+  if (!context || !webUrl) {
+    return [];
+  }
+
+  try {
+    const response = await context.spHttpClient.get(
+      `${webUrl}/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500`,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          accept: 'application/json;odata=verbose'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 406 || response.status === 400) {
+        disableRestSiteUsersSearch = true;
+      }
+      return [];
+    }
+
+    const payload = (await response.json()) as {
+      value?: ISiteUserRestItem[];
+      d?: { results?: ISiteUserRestItem[] };
+    };
+
+    const users = payload.value ?? payload.d?.results ?? [];
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return users
+      .filter((user) => {
+        const title = String(user.Title || '').toLowerCase();
+        const email = String(user.Email || user.EMail || '').toLowerCase();
+        const loginName = String(user.LoginName || '').toLowerCase();
+        return title.indexOf(normalizedQuery) > -1 || email.indexOf(normalizedQuery) > -1 || loginName.indexOf(normalizedQuery) > -1;
+      })
+      .slice(0, 10)
+      .map((user) => ({
+        id: user.Id ?? null,
+        name: user.Title || user.Email || user.EMail || user.LoginName || '',
+        email: user.Email || user.EMail || extractEmailFromLoginName(user.LoginName || ''),
+        loginName: user.LoginName || ''
+      }));
+  } catch {
+    disableRestSiteUsersSearch = true;
+    return [];
+  }
+};
+
+const searchUsersFromUserRoles = async (query: string): Promise<IResolvedUser[]> => {
+  const sp = getSP();
+  const normalizedQuery = query.trim().toLowerCase();
+
+  try {
+    const items = await sp.web.lists
+      .getByTitle('UserRoles')
+      .items.select('User/Id', 'User/Title', 'User/EMail', 'User/LoginName', 'IsActive')
+      .expand('User')
+      .top(200)();
+
+    return items
+      .filter((item: any) => item?.IsActive !== false && item?.User)
+      .map((item: any) => {
+        const user = Array.isArray(item.User) ? item.User[0] : item.User;
+        return {
+          id: user?.Id ?? null,
+          name: user?.Title || '',
+          email: user?.EMail || '',
+          loginName: user?.LoginName || ''
+        } as IResolvedUser;
+      })
+      .filter((user: IResolvedUser) => {
+        const title = String(user.name || '').toLowerCase();
+        const email = String(user.email || '').toLowerCase();
+        const loginName = String(user.loginName || '').toLowerCase();
+        return (
+          title.indexOf(normalizedQuery) > -1 ||
+          email.indexOf(normalizedQuery) > -1 ||
+          loginName.indexOf(normalizedQuery) > -1
+        );
+      })
+      .slice(0, 10);
+  } catch {
+    return [];
+  }
 };
 
 const searchUsers = async (query: string, siteUrl?: string): Promise<IResolvedUser[]> => {
@@ -206,12 +375,14 @@ const searchUsers = async (query: string, siteUrl?: string): Promise<IResolvedUs
   }
 
   try {
-    const [directoryUsers, siteUsers] = await Promise.all([
+    const [siteUsers, roleUsers, restSiteUsers, directoryUsers] = await Promise.all([
+      searchSiteUsers(trimmed).catch(() => []),
+      searchUsersFromUserRoles(trimmed).catch(() => []),
+      searchSiteUsersViaRest(trimmed, siteUrl).catch(() => []),
       searchDirectoryUsers(trimmed, siteUrl).catch(() => []),
-      searchSiteUsers(trimmed).catch(() => [])
     ]);
 
-    const merged = mergeUniqueUsers([...siteUsers, ...directoryUsers]);
+    const merged = mergeUniqueUsers([...siteUsers, ...roleUsers, ...restSiteUsers, ...directoryUsers]);
     return merged.slice(0, 10);
   } catch (error) {
     console.error('PeoplePicker search error:', error);
@@ -245,6 +416,24 @@ const ensureResolvedUser = async (candidate: IResolvedUser): Promise<IResolvedUs
       }
     } catch {
       // fallback below
+    }
+  }
+
+  if (candidate.email) {
+    try {
+      const ensured = await sp.web.ensureUser(`i:0#.f|membership|${candidate.email}`);
+      const ensuredAny = ensured as any;
+      const id = ensuredAny?.Id ?? ensuredAny?.data?.Id ?? null;
+      if (id) {
+        return {
+          id,
+          name: ensuredAny?.Title ?? ensuredAny?.data?.Title ?? candidate.name,
+          email: ensuredAny?.Email ?? ensuredAny?.data?.Email ?? candidate.email,
+          loginName: ensuredAny?.LoginName ?? ensuredAny?.data?.LoginName ?? candidate.loginName
+        };
+      }
+    } catch {
+      // continue to siteUsers lookup
     }
   }
 
