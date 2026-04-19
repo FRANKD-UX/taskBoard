@@ -1,212 +1,253 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
+// TaskPanel.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
-var pnpjsConfig_1 = require("../../../pnpjsConfig");
-var panelContainerStyle = {
+var theme_1 = require("./theme");
+var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+var panelStyle = {
     position: 'fixed',
     top: 0,
     right: 0,
-    width: '350px',
+    width: '380px',
+    maxWidth: '90vw',
     height: '100vh',
-    backgroundColor: '#1f2a44',
-    color: '#f8fafc',
-    borderLeft: '1px solid #334155',
-    zIndex: 1100,
-    padding: '16px',
+    backgroundColor: theme_1.THEME.colors.panel,
+    boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.4)',
+    zIndex: 1000,
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
-    overflowY: 'auto'
+    color: theme_1.THEME.colors.textPrimary,
+    borderLeft: "1px solid ".concat(theme_1.THEME.colors.border),
+    overflowY: 'auto',
+    transition: 'transform 0.25s ease',
+};
+var overlayStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 999,
+};
+var headerStyle = {
+    padding: '20px 20px 16px',
+    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+};
+var sectionStyle = {
+    padding: '16px 20px',
+    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+};
+var labelStyle = {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: theme_1.THEME.colors.textSecondary,
+    marginBottom: '6px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.3px',
 };
 var inputStyle = {
     backgroundColor: '#0f172a',
-    color: '#f8fafc',
-    border: '1px solid #334155',
+    color: theme_1.THEME.colors.textStrong,
+    border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '8px',
-    padding: '8px'
+    padding: '10px 12px',
+    width: '100%',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.15s',
+    boxSizing: 'border-box',
 };
-var statusOptions = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
-var requestTypeOptions = ['Task', 'Incident'];
-var departmentOptions = ['IT', 'Finance', 'Operations'];
+var primaryButtonStyle = {
+    padding: '10px 16px',
+    borderRadius: '8px',
+    border: 'none',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    backgroundColor: '#2563eb',
+    color: 'white',
+    transition: 'background-color 0.15s, opacity 0.15s',
+};
+var dangerButtonStyle = {
+    padding: '10px 16px',
+    borderRadius: '8px',
+    border: 'none',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    backgroundColor: '#ef4444',
+    color: 'white',
+    transition: 'background-color 0.15s, opacity 0.15s',
+};
+// ---------------------------------------------------------------------------
+// Helper
+// ---------------------------------------------------------------------------
+var buildResolvedUserFromTask = function (task) {
+    var _a, _b, _c, _d, _e;
+    if (!task.assignedTo && !task.assignedToEmail) {
+        return null;
+    }
+    return {
+        id: (_a = task.assignedToId) !== null && _a !== void 0 ? _a : null,
+        name: (_b = task.assignedTo) !== null && _b !== void 0 ? _b : '',
+        email: (_d = (_c = task.assignedToEmail) !== null && _c !== void 0 ? _c : task.assignedTo) !== null && _d !== void 0 ? _d : '',
+        loginName: (_e = task.assignedToLoginName) !== null && _e !== void 0 ? _e : '',
+    };
+};
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 var TaskPanel = function (_a) {
-    var selectedTask = _a.selectedTask, updateTask = _a.updateTask, deleteTask = _a.deleteTask, onClose = _a.onClose, canAssign = _a.canAssign;
-    var dueDateInputRef = React.useRef(null);
-    var _b = (0, react_1.useState)([]), userOptions = _b[0], setUserOptions = _b[1];
-    var _c = (0, react_1.useState)(''), assignedQuery = _c[0], setAssignedQuery = _c[1];
-    var _d = (0, react_1.useState)(false), showUserSuggestions = _d[0], setShowUserSuggestions = _d[1];
+    var _b, _c, _d, _e, _f, _g, _h, _j;
+    var selectedTask = _a.selectedTask, updateTask = _a.updateTask, saveTask = _a.saveTask, deleteTask = _a.deleteTask, onClose = _a.onClose, canAssign = _a.canAssign, context = _a.context, currentUserName = _a.currentUserName;
+    var _k = (0, react_1.useState)(false), isSaving = _k[0], setIsSaving = _k[1];
+    var _l = (0, react_1.useState)(null), saveError = _l[0], setSaveError = _l[1];
+    var panelRef = (0, react_1.useRef)(null);
+    var siteUrl = (_d = (_c = (_b = context === null || context === void 0 ? void 0 : context.pageContext) === null || _b === void 0 ? void 0 : _b.web) === null || _c === void 0 ? void 0 : _c.absoluteUrl) !== null && _d !== void 0 ? _d : (typeof window !== 'undefined' ? window.location.origin : '');
     (0, react_1.useEffect)(function () {
-        var loadUsers = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var sp, users, _a;
-            return tslib_1.__generator(this, function (_b) {
-                switch (_b.label) {
-                    case 0:
-                        _b.trys.push([0, 2, , 3]);
-                        sp = (0, pnpjsConfig_1.getSP)();
-                        return [4 /*yield*/, sp.web.siteUsers.select('Id', 'Title', 'Email').top(100)()];
-                    case 1:
-                        users = _b.sent();
-                        setUserOptions(users
-                            .filter(function (user) { return Boolean(user === null || user === void 0 ? void 0 : user.Title); })
-                            .map(function (user) { return ({
-                            id: user.Id,
-                            name: user.Title,
-                            email: user.Email
-                        }); }));
-                        return [3 /*break*/, 3];
-                    case 2:
-                        _a = _b.sent();
-                        setUserOptions([]);
-                        return [3 /*break*/, 3];
-                    case 3: return [2 /*return*/];
-                }
+        setSaveError(null);
+    }, [selectedTask === null || selectedTask === void 0 ? void 0 : selectedTask.id]);
+    (0, react_1.useEffect)(function () {
+        var handleKey = function (event) {
+            if (event.key === 'Escape')
+                onClose();
+        };
+        window.addEventListener('keydown', handleKey);
+        return function () { return window.removeEventListener('keydown', handleKey); };
+    }, [onClose]);
+    if (!selectedTask)
+        return null;
+    var handleUpdate = function (updates) {
+        updateTask(selectedTask.id, updates);
+    };
+    var handleAssigneeChange = function (user) {
+        var _a;
+        if (!user) {
+            handleUpdate({
+                assignedTo: '',
+                assignedToId: undefined,
+                assignedToEmail: undefined,
+                assignedToLoginName: undefined,
             });
-        }); };
-        loadUsers().catch(function () { return undefined; });
-    }, []);
-    (0, react_1.useEffect)(function () {
-        if (!selectedTask) {
-            setAssignedQuery('');
-            setShowUserSuggestions(false);
             return;
         }
-        setAssignedQuery(selectedTask.assignedTo || '');
-        setShowUserSuggestions(false);
-    }, [selectedTask]);
-    var filteredUserOptions = (0, react_1.useMemo)(function () {
-        var query = assignedQuery.trim().toLowerCase();
-        if (!query) {
-            return userOptions.slice(0, 6);
-        }
-        return userOptions.filter(function (user) { return user.name.toLowerCase().indexOf(query) > -1; }).slice(0, 6);
-    }, [assignedQuery, userOptions]);
-    var handleAssigneeSelect = function (user) {
-        setAssignedQuery(user.name);
-        setShowUserSuggestions(false);
-        handleUpdateTask({
+        handleUpdate({
             assignedTo: user.name,
-            assignedToId: user.id
+            assignedToId: (_a = user.id) !== null && _a !== void 0 ? _a : undefined,
+            assignedToEmail: user.email,
+            assignedToLoginName: user.loginName,
         });
     };
-    var handleAssigneeInputChange = function (value) {
-        setAssignedQuery(value);
-        setShowUserSuggestions(true);
-        var exactMatch = userOptions.find(function (user) { return user.name.toLowerCase() === value.trim().toLowerCase(); });
-        if (exactMatch) {
-            handleUpdateTask({
-                assignedTo: exactMatch.name,
-                assignedToId: exactMatch.id
-            });
-            return;
-        }
-        handleUpdateTask({
-            assignedTo: value,
-            assignedToId: undefined
+    var handleSaveAndClose = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var saved, err_1;
+        return tslib_1.__generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!selectedTask)
+                        return [2 /*return*/];
+                    setIsSaving(true);
+                    setSaveError(null);
+                    _a.label = 1;
+                case 1:
+                    _a.trys.push([1, 3, 4, 5]);
+                    return [4 /*yield*/, saveTask(selectedTask)];
+                case 2:
+                    saved = _a.sent();
+                    if (!saved) {
+                        setSaveError('Save may have partially succeeded. Please refresh and verify.');
+                        return [2 /*return*/];
+                    }
+                    onClose();
+                    return [3 /*break*/, 5];
+                case 3:
+                    err_1 = _a.sent();
+                    console.error('Save failed', err_1);
+                    setSaveError('The task could not be saved to SharePoint. Try again.');
+                    return [3 /*break*/, 5];
+                case 4:
+                    setIsSaving(false);
+                    return [7 /*endfinally*/];
+                case 5: return [2 /*return*/];
+            }
         });
-    };
-    var openDueDatePicker = function () {
-        var input = dueDateInputRef.current;
-        if (input && typeof input.showPicker === 'function') {
-            input.showPicker();
-        }
-    };
-    var handleUpdateTask = function (changes) {
-        if (!selectedTask) {
-            return;
-        }
-        updateTask(selectedTask.id, changes);
-    };
-    var handleDeleteTask = function () {
-        if (!selectedTask) {
-            return;
-        }
+    }); };
+    var handleDelete = function () {
         deleteTask(selectedTask.id);
         onClose();
     };
-    var handleSaveAndClose = function () {
-        onClose();
-    };
-    if (!selectedTask) {
-        return null;
-    }
-    return (React.createElement("div", { style: panelContainerStyle },
-        React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-            React.createElement("strong", null, "Task Details"),
-            React.createElement("button", { type: "button", onClick: onClose, style: { background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: '18px' } }, "\u00D7")),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Title"),
-            React.createElement("input", { type: "text", value: selectedTask.title, onChange: function (event) { return handleUpdateTask({ title: event.target.value }); }, style: inputStyle })),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Assigned user"),
-            canAssign ? (React.createElement("div", { style: { display: 'grid', gap: '6px', position: 'relative' } },
-                React.createElement("input", { type: "text", value: assignedQuery, onChange: function (event) { return handleAssigneeInputChange(event.target.value); }, onFocus: function () { return setShowUserSuggestions(true); }, placeholder: "Type a name", style: inputStyle }),
-                showUserSuggestions && filteredUserOptions.length > 0 && (React.createElement("div", { style: {
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        backgroundColor: '#0f172a',
-                        overflow: 'hidden'
-                    } }, filteredUserOptions.map(function (user) { return (React.createElement("button", { key: user.id, type: "button", onMouseDown: function (event) {
-                        event.preventDefault();
-                        handleAssigneeSelect(user);
-                    }, style: {
-                        width: '100%',
-                        backgroundColor: 'transparent',
-                        color: '#f8fafc',
+    var resolvedAssignee = buildResolvedUserFromTask(selectedTask);
+    return (React.createElement(React.Fragment, null,
+        React.createElement("div", { style: overlayStyle, onClick: onClose }),
+        React.createElement("div", { ref: panelRef, style: panelStyle },
+            React.createElement("div", { style: headerStyle },
+                React.createElement("h2", { style: { margin: 0, fontSize: '18px', color: theme_1.THEME.colors.textStrong } }, "Task Details"),
+                React.createElement("button", { type: "button", onClick: onClose, "aria-label": "Close", style: {
+                        background: 'none',
                         border: 'none',
-                        borderBottom: '1px solid #1f2937',
-                        textAlign: 'left',
-                        padding: '8px',
-                        cursor: 'pointer'
-                    } }, user.name)); }))))) : (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-                React.createElement("span", { style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { backgroundColor: '#111827' }) }, selectedTask.assignedTo || 'Unassigned'),
-                React.createElement("span", { style: { color: '#fbbf24', fontSize: '11px' } }, "\uD83D\uDD12 Assignment restricted (Manager required)")))),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Request Type"),
-            React.createElement("select", { value: selectedTask.requestType || 'Task', onChange: function (event) { return handleUpdateTask({ requestType: event.target.value }); }, style: inputStyle }, requestTypeOptions.map(function (type) { return (React.createElement("option", { key: type, value: type }, type)); }))),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Department"),
-            React.createElement("select", { value: selectedTask.department || 'IT', onChange: function (event) { return handleUpdateTask({ department: event.target.value }); }, style: inputStyle }, departmentOptions.map(function (department) { return (React.createElement("option", { key: department, value: department }, department)); }))),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Status"),
-            React.createElement("select", { value: selectedTask.status, onChange: function (event) { return handleUpdateTask({ status: event.target.value }); }, style: inputStyle }, statusOptions.map(function (status) { return (React.createElement("option", { key: status, value: status }, status)); }))),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Due date"),
-            React.createElement("input", { ref: dueDateInputRef, type: "date", value: selectedTask.dueDate, onChange: function (event) { return handleUpdateTask({ dueDate: event.target.value }); }, onClick: openDueDatePicker, onFocus: openDueDatePicker, onKeyDown: function (event) {
-                    if (event.key !== 'Tab') {
-                        event.preventDefault();
-                    }
-                }, inputMode: "none", style: inputStyle })),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Priority"),
-            React.createElement("select", { value: selectedTask.priority, onChange: function (event) { return handleUpdateTask({ priority: event.target.value }); }, style: inputStyle },
-                React.createElement("option", { value: "Low" }, "Low"),
-                React.createElement("option", { value: "Medium" }, "Medium"),
-                React.createElement("option", { value: "High" }, "High"))),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Description"),
-            React.createElement("textarea", { value: selectedTask.description || '', onChange: function (event) { return handleUpdateTask({ description: event.target.value }); }, rows: 4, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical' }) })),
-        React.createElement("label", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-            React.createElement("span", { style: { color: '#cbd5e1', fontSize: '12px' } }, "Created By"),
-            React.createElement("span", { style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { backgroundColor: '#111827' }) }, selectedTask.createdBy || 'Unknown')),
-        React.createElement("button", { type: "button", onClick: handleSaveAndClose, style: {
-                marginTop: '8px',
-                backgroundColor: '#065f46',
-                color: '#d1fae5',
-                border: '1px solid #047857',
-                borderRadius: '8px',
-                padding: '8px',
-                cursor: 'pointer'
-            } }, "Save & Close"),
-        React.createElement("button", { type: "button", onClick: handleDeleteTask, style: {
-                marginTop: '8px',
-                backgroundColor: '#7f1d1d',
-                color: '#fecaca',
-                border: '1px solid #991b1b',
-                borderRadius: '8px',
-                padding: '8px',
-                cursor: 'pointer'
-            } }, "Delete Task")));
+                        color: theme_1.THEME.colors.textSecondary,
+                        fontSize: '24px',
+                        cursor: 'pointer',
+                        padding: 0,
+                        lineHeight: 1,
+                    } }, "x")),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Title"),
+                React.createElement("input", { type: "text", value: selectedTask.title, onChange: function (e) { return handleUpdate({ title: e.target.value }); }, style: inputStyle, placeholder: "Task title" })),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Assigned To"),
+                React.createElement(PeoplePicker_1.default, { value: resolvedAssignee, onChange: handleAssigneeChange, siteUrl: siteUrl, placeholder: "Search by name or email...", canEdit: canAssign })),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' } },
+                    React.createElement("div", null,
+                        React.createElement("label", { style: labelStyle }, "Start Date"),
+                        React.createElement("input", { type: "date", value: (_f = (_e = selectedTask.startDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', onChange: function (e) { return handleUpdate({ startDate: e.target.value }); }, style: inputStyle })),
+                    React.createElement("div", null,
+                        React.createElement("label", { style: labelStyle }, "Due Date"),
+                        React.createElement("input", { type: "date", value: (_h = (_g = selectedTask.dueDate) === null || _g === void 0 ? void 0 : _g.split('T')[0]) !== null && _h !== void 0 ? _h : '', onChange: function (e) { return handleUpdate({ dueDate: e.target.value }); }, style: inputStyle })))),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Priority"),
+                React.createElement("select", { value: selectedTask.priority, onChange: function (e) { return handleUpdate({ priority: e.target.value }); }, style: inputStyle },
+                    React.createElement("option", { value: "Low" }, "Low"),
+                    React.createElement("option", { value: "Medium" }, "Medium"),
+                    React.createElement("option", { value: "High" }, "High"))),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Status"),
+                React.createElement("select", { value: selectedTask.status, onChange: function (e) { return handleUpdate({ status: e.target.value }); }, style: inputStyle },
+                    React.createElement("option", { value: "Unassigned" }, "Unassigned"),
+                    React.createElement("option", { value: "Backlog" }, "Backlog"),
+                    React.createElement("option", { value: "ThisWeek" }, "This Week"),
+                    React.createElement("option", { value: "InProgress" }, "In Progress"),
+                    React.createElement("option", { value: "Completed" }, "Completed"))),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Description"),
+                React.createElement("textarea", { value: (_j = selectedTask.description) !== null && _j !== void 0 ? _j : '', onChange: function (e) { return handleUpdate({ description: e.target.value }); }, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { minHeight: '100px', resize: 'vertical' }), placeholder: "Add a description..." })),
+            React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Created By"),
+                React.createElement("div", { style: { fontSize: '14px', color: theme_1.THEME.colors.textStrong } }, selectedTask.createdBy || currentUserName || 'Unknown')),
+            saveError && (React.createElement("div", { style: {
+                    padding: '12px 20px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderTop: "1px solid ".concat(theme_1.THEME.colors.border),
+                } },
+                React.createElement("span", { style: { color: '#ef4444', fontSize: '13px' } }, saveError))),
+            React.createElement("div", { style: {
+                    padding: '20px',
+                    display: 'flex',
+                    gap: '12px',
+                    borderTop: "1px solid ".concat(theme_1.THEME.colors.border),
+                    marginTop: 'auto',
+                } },
+                React.createElement("button", { type: "button", onClick: handleSaveAndClose, disabled: isSaving, style: tslib_1.__assign(tslib_1.__assign({}, primaryButtonStyle), { flex: 2, opacity: isSaving ? 0.7 : 1 }) }, isSaving ? 'Saving...' : 'Save & Close'),
+                React.createElement("button", { type: "button", onClick: handleDelete, style: tslib_1.__assign(tslib_1.__assign({}, dangerButtonStyle), { flex: 1 }) }, "Delete")))));
 };
 exports.default = TaskPanel;
 //# sourceMappingURL=TaskPanel.js.map

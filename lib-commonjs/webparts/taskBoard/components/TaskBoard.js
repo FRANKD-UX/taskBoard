@@ -5,7 +5,7 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var react_beautiful_dnd_1 = require("react-beautiful-dnd");
 var BoardView_1 = tslib_1.__importDefault(require("./BoardView"));
-var TaskPanel_1 = tslib_1.__importDefault(require("./TaskPanel"));
+var TaskModal_1 = tslib_1.__importDefault(require("./TaskModal"));
 var TableView_1 = tslib_1.__importDefault(require("./TableView"));
 var CalendarView_1 = tslib_1.__importDefault(require("./CalendarView"));
 var ChartView_1 = tslib_1.__importDefault(require("./ChartView"));
@@ -13,71 +13,37 @@ var GanttView_1 = tslib_1.__importDefault(require("./GanttView"));
 var TaskService_1 = require("../../../services/TaskService");
 var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var UserRoleService_1 = require("../../../services/UserRoleService");
-var mockTasks = [
-    {
-        id: '1',
-        title: 'Fix network issue',
-        status: 'InProgress',
-        priority: 'High',
-        assignedTo: 'Frank Ndlovu',
-        dueDate: '2026-04-15',
-        createdAt: '2026-04-01',
-        requestType: 'Incident',
-        department: 'IT',
-        description: 'Intermittent WAN drop on branch edge router.',
-        createdBy: 'Frank Ndlovu'
-    },
-    {
-        id: '2',
-        title: 'Update billing system',
-        status: 'Backlog',
-        priority: 'Medium',
-        assignedTo: 'Jacobus Coetzee',
-        dueDate: '2026-04-18',
-        createdAt: '2026-04-02',
-        requestType: 'Task',
-        department: 'Finance',
-        description: 'Apply tax rule updates for April release.',
-        createdBy: 'Jacobus Coetzee'
-    },
-    {
-        id: '3',
-        title: 'Deploy new router config',
-        status: 'Completed',
-        priority: 'Low',
-        assignedTo: 'Nhalnhla Mkhithi',
-        dueDate: '2026-04-10',
-        createdAt: '2026-04-03',
-        requestType: 'Task',
-        department: 'Operations',
-        description: 'Roll out approved QoS profile to regional hubs.',
-        createdBy: 'Nhalnhla Mkhithi'
-    }
-];
-var taskStatuses = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
-var toTaskStatus = function (value) {
-    if (value && taskStatuses.indexOf(value) > -1) {
-        return value;
-    }
-    return 'Unassigned';
-};
-var viewTabs = [
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+var TEMP_ID_PREFIX = 'temp_';
+var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
+var VIEW_TABS = [
     { key: 'board', label: 'Board' },
     { key: 'table', label: 'Table' },
     { key: 'calendar', label: 'Calendar' },
     { key: 'gantt', label: 'Gantt' },
-    { key: 'chart', label: 'Chart' }
+    { key: 'chart', label: 'Chart' },
 ];
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+var toTaskStatus = function (value) {
+    if (value && TASK_STATUSES.indexOf(value) > -1) {
+        return value;
+    }
+    return 'Unassigned';
+};
+var getTodayIso = function () {
+    var d = new Date();
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+};
 var groupTasksByStatus = function (tasks) {
     var grouped = {
-        Unassigned: [],
-        Backlog: [],
-        ThisWeek: [],
-        InProgress: [],
-        Completed: []
+        Unassigned: [], Backlog: [], ThisWeek: [], InProgress: [], Completed: [],
     };
     tasks.forEach(function (task) {
-        if (taskStatuses.indexOf(task.status) > -1) {
+        if (TASK_STATUSES.indexOf(task.status) > -1) {
             grouped[task.status].push(task);
         }
         else {
@@ -86,309 +52,360 @@ var groupTasksByStatus = function (tasks) {
     });
     return grouped;
 };
-var reorderTasksAfterDrag = function (items, result) {
+var reorderTasksAfterDrag = function (tasks, result) {
     var source = result.source, destination = result.destination;
-    if (!destination) {
-        return items;
+    if (!destination)
+        return tasks;
+    var srcStatus = source.droppableId;
+    var dstStatus = destination.droppableId;
+    if (TASK_STATUSES.indexOf(srcStatus) === -1 ||
+        TASK_STATUSES.indexOf(dstStatus) === -1 ||
+        (srcStatus === dstStatus && source.index === destination.index)) {
+        return tasks;
     }
-    var sourceStatus = source.droppableId;
-    var destinationStatus = destination.droppableId;
-    if (taskStatuses.indexOf(sourceStatus) === -1 ||
-        taskStatuses.indexOf(destinationStatus) === -1 ||
-        (sourceStatus === destinationStatus && source.index === destination.index)) {
-        return items;
-    }
-    var grouped = groupTasksByStatus(items);
-    var sourceTasks = grouped[sourceStatus].slice();
-    var destinationTasks = sourceStatus === destinationStatus ? sourceTasks : grouped[destinationStatus].slice();
-    var movedTask = sourceTasks.splice(source.index, 1)[0];
-    if (!movedTask) {
-        return items;
-    }
-    destinationTasks.splice(destination.index, 0, tslib_1.__assign(tslib_1.__assign({}, movedTask), { status: destinationStatus }));
-    grouped[sourceStatus] = sourceTasks;
-    grouped[destinationStatus] = destinationTasks;
-    return taskStatuses.reduce(function (acc, status) {
-        return acc.concat(grouped[status]);
-    }, []);
+    var grouped = groupTasksByStatus(tasks);
+    var srcTasks = grouped[srcStatus].slice();
+    var dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
+    var moved = srcTasks.splice(source.index, 1)[0];
+    if (!moved)
+        return tasks;
+    dstTasks.splice(destination.index, 0, tslib_1.__assign(tslib_1.__assign({}, moved), { status: dstStatus }));
+    grouped[srcStatus] = srcTasks;
+    grouped[dstStatus] = dstTasks;
+    return TASK_STATUSES.reduce(function (acc, s) { return acc.concat(grouped[s]); }, []);
 };
-var TaskBoard = function () {
-    var _a = (0, react_1.useState)([]), tasks = _a[0], setTasks = _a[1];
-    var _b = (0, react_1.useState)(null), selectedTaskId = _b[0], setSelectedTaskId = _b[1];
-    var _c = (0, react_1.useState)('board'), activeView = _c[0], setActiveView = _c[1];
-    var _d = (0, react_1.useState)('board'), displayedView = _d[0], setDisplayedView = _d[1];
-    var _e = (0, react_1.useState)(true), isViewVisible = _e[0], setIsViewVisible = _e[1];
-    var _f = (0, react_1.useState)(null), hoveredTab = _f[0], setHoveredTab = _f[1];
-    var _g = (0, react_1.useState)(false), canAssign = _g[0], setCanAssign = _g[1];
-    var _h = (0, react_1.useState)(''), currentUserName = _h[0], setCurrentUserName = _h[1];
-    var _j = (0, react_1.useState)(undefined), currentUserId = _j[0], setCurrentUserId = _j[1];
+var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var sp, user, _a, user, userAny, _b;
+    var _c;
+    return tslib_1.__generator(this, function (_d) {
+        switch (_d.label) {
+            case 0:
+                sp = (0, pnpjsConfig_1.getSP)();
+                if (!(email === null || email === void 0 ? void 0 : email.trim())) return [3 /*break*/, 4];
+                _d.label = 1;
+            case 1:
+                _d.trys.push([1, 3, , 4]);
+                return [4 /*yield*/, sp.web.siteUsers.getByEmail(email.trim())()];
+            case 2:
+                user = _d.sent();
+                if (user === null || user === void 0 ? void 0 : user.Id)
+                    return [2 /*return*/, user.Id];
+                return [3 /*break*/, 4];
+            case 3:
+                _a = _d.sent();
+                return [3 /*break*/, 4];
+            case 4:
+                if (!(loginName === null || loginName === void 0 ? void 0 : loginName.trim())) return [3 /*break*/, 8];
+                _d.label = 5;
+            case 5:
+                _d.trys.push([5, 7, , 8]);
+                return [4 /*yield*/, sp.web.ensureUser(loginName.trim())];
+            case 6:
+                user = _d.sent();
+                userAny = user;
+                if (userAny === null || userAny === void 0 ? void 0 : userAny.Id)
+                    return [2 /*return*/, userAny.Id];
+                if ((_c = userAny === null || userAny === void 0 ? void 0 : userAny.data) === null || _c === void 0 ? void 0 : _c.Id)
+                    return [2 /*return*/, userAny.data.Id];
+                return [3 /*break*/, 8];
+            case 7:
+                _b = _d.sent();
+                return [3 /*break*/, 8];
+            case 8: return [2 /*return*/, null];
+        }
+    });
+}); };
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+var TaskBoard = function (_a) {
+    var context = _a.context;
+    var _b = (0, react_1.useState)([]), tasks = _b[0], setTasks = _b[1];
+    var _c = (0, react_1.useState)(null), modalTask = _c[0], setModalTask = _c[1];
+    var _d = (0, react_1.useState)('board'), activeView = _d[0], setActiveView = _d[1];
+    var _e = (0, react_1.useState)('board'), displayedView = _e[0], setDisplayedView = _e[1];
+    var _f = (0, react_1.useState)(true), isViewVisible = _f[0], setIsViewVisible = _f[1];
+    var _g = (0, react_1.useState)(null), hoveredTab = _g[0], setHoveredTab = _g[1];
+    var _h = (0, react_1.useState)(false), canAssign = _h[0], setCanAssign = _h[1];
+    var _j = (0, react_1.useState)(''), currentUserName = _j[0], setCurrentUserName = _j[1];
+    var _k = (0, react_1.useState)(true), isLoading = _k[0], setIsLoading = _k[1];
+    var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
+    // Make the SPFx context available on window so PeoplePicker's
+    // getSPHttpClient() helper can reach it without prop-drilling.
+    (0, react_1.useEffect)(function () {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        window.spfxContext = context;
+    }, [context]);
+    // ---------------------------------------------------------------------------
+    // Initial data load
+    // ---------------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
         var loadTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var service, sp, currentUser, roleData, hasAssignPermission, loadedTasks;
+            var sp, user_1, role, data, error_1;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        service = new TaskService_1.TaskService();
+                        _a.trys.push([0, 4, 5, 6]);
+                        setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
                     case 1:
-                        currentUser = _a.sent();
-                        setCurrentUserName(currentUser.Title || currentUser.Email || '');
-                        setCurrentUserId(currentUser.Id);
-                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(currentUser.Email)];
+                        user_1 = _a.sent();
+                        setCurrentUserName(user_1.Title || '');
+                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user_1.Email)];
                     case 2:
-                        roleData = _a.sent();
-                        console.log('CURRENT USER:', currentUser);
-                        console.log('ROLE DATA:', roleData);
-                        hasAssignPermission = (roleData === null || roleData === void 0 ? void 0 : roleData.canAssign) === true;
-                        setCanAssign(hasAssignPermission);
-                        return [4 /*yield*/, service.getTasks()];
+                        role = _a.sent();
+                        setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
+                        return [4 /*yield*/, taskService.getTasks()];
                     case 3:
-                        loadedTasks = _a.sent();
-                        console.log('TASK DATA:', loadedTasks);
-                        window.taskBoardDebug = {
-                            currentUser: currentUser,
-                            roleData: roleData,
-                            loadedTasks: loadedTasks,
-                            canAssign: hasAssignPermission,
-                            loadError: null
-                        };
-                        setTasks(loadedTasks.map(function (task) { return ({
-                            id: task.id.toString(),
-                            title: task.title || 'Untitled Task',
-                            status: toTaskStatus(task.status),
-                            priority: task.priority === 'High' || task.priority === 'Low' ? task.priority : 'Medium',
-                            assignedTo: task.assignedTo || '',
-                            assignedToId: task.assignedToId,
-                            dueDate: task.dueDate || '',
-                            createdAt: task.startDate || new Date().toISOString(),
-                            requestType: task.requestType || 'Task',
-                            department: task.department || 'IT',
-                            description: task.description || '',
-                            createdBy: currentUser.Title || currentUser.Email || ''
+                        data = _a.sent();
+                        setTasks(data.map(function (t) { return ({
+                            id: t.id.toString(),
+                            title: t.title,
+                            status: toTaskStatus(t.status),
+                            priority: t.priority,
+                            assignedTo: t.assignedTo,
+                            assignedToId: t.assignedToId,
+                            assignedToEmail: t.assignedToEmail,
+                            assignedToLoginName: t.assignedToLoginName,
+                            startDate: t.startDate,
+                            dueDate: t.dueDate,
+                            createdAt: new Date().toISOString(),
+                            requestType: t.requestType,
+                            department: t.department,
+                            description: t.description,
+                            createdBy: user_1.Title,
                         }); }));
-                        return [2 /*return*/];
+                        return [3 /*break*/, 6];
+                    case 4:
+                        error_1 = _a.sent();
+                        console.error('TaskBoard: load failed', error_1);
+                        return [3 /*break*/, 6];
+                    case 5:
+                        setIsLoading(false);
+                        return [7 /*endfinally*/];
+                    case 6: return [2 /*return*/];
                 }
             });
         }); };
-        loadTasks().catch(function (error) {
-            console.error('Failed to load tasks from SharePoint.', error);
-            window.taskBoardDebug = {
-                loadError: error,
-                loadedTasks: [],
-                fallbackTasks: mockTasks,
-                canAssign: false
-            };
-            setTasks(mockTasks);
-        });
-    }, []);
+        loadTasks();
+    }, [taskService]);
+    // ---------------------------------------------------------------------------
+    // View transition fade
+    // ---------------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
-        console.log('TASK DATA:', tasks);
-    }, [tasks]);
-    (0, react_1.useEffect)(function () {
-        window.taskBoardDebug = tslib_1.__assign(tslib_1.__assign({}, window.taskBoardDebug), { tasks: tasks, canAssign: canAssign, selectedTaskId: selectedTaskId });
-    }, [tasks, canAssign, selectedTaskId]);
-    (0, react_1.useEffect)(function () {
-        if (activeView === displayedView) {
+        if (activeView === displayedView)
             return;
-        }
         setIsViewVisible(false);
-        var timeout = setTimeout(function () {
+        var timer = setTimeout(function () {
             setDisplayedView(activeView);
             setIsViewVisible(true);
         }, 120);
-        return function () { return clearTimeout(timeout); };
+        return function () { return clearTimeout(timer); };
     }, [activeView, displayedView]);
-    var selectedTask = (0, react_1.useMemo)(function () {
-        if (selectedTaskId === null) {
-            return null;
-        }
-        return tasks.find(function (task) { return task.id === selectedTaskId; }) || null;
-    }, [selectedTaskId, tasks]);
+    // ---------------------------------------------------------------------------
+    // Drag and drop
+    // ---------------------------------------------------------------------------
     var handleDragEnd = function (result) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var source, destination, draggableId, newStatus, service, error_1;
+        var destination, draggableId, newStatus, error_2;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    source = result.source, destination = result.destination, draggableId = result.draggableId;
+                    destination = result.destination, draggableId = result.draggableId;
                     if (!destination)
                         return [2 /*return*/];
                     newStatus = destination.droppableId;
                     _a.label = 1;
                 case 1:
                     _a.trys.push([1, 3, , 4]);
-                    service = new TaskService_1.TaskService();
-                    // Persist to SharePoint FIRST
-                    return [4 /*yield*/, service.updateTask(Number(draggableId), {
-                            status: newStatus
-                        })];
+                    return [4 /*yield*/, taskService.updateTask(Number(draggableId), { status: newStatus })];
                 case 2:
-                    // Persist to SharePoint FIRST
                     _a.sent();
-                    // Then update UI
-                    setTasks(function (currentTasks) {
-                        return reorderTasksAfterDrag(currentTasks, result);
-                    });
+                    setTasks(function (current) { return reorderTasksAfterDrag(current, result); });
                     return [3 /*break*/, 4];
                 case 3:
-                    error_1 = _a.sent();
-                    console.error("DRAG UPDATE FAILED:", error_1);
+                    error_2 = _a.sent();
+                    console.error('TaskBoard: drag update failed', error_2);
                     return [3 /*break*/, 4];
                 case 4: return [2 /*return*/];
             }
         });
     }); };
-    var updateTask = function (id, updates) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var service, safeUpdates_1, error_2;
-        return tslib_1.__generator(this, function (_a) {
-            switch (_a.label) {
+    // ---------------------------------------------------------------------------
+    // Modal triggers
+    // ---------------------------------------------------------------------------
+    /**
+     * Opens the modal for an EXISTING task (card click, calendar click, etc.)
+     */
+    var handleTaskClick = function (task) {
+        setModalTask(task);
+    };
+    /**
+     * Opens the modal in NEW TASK mode.
+     * We build a minimal temp Task so TaskModal gets a properly shaped object.
+     */
+    var handleNewTask = function (status) {
+        var today = getTodayIso();
+        var draft = {
+            id: "".concat(TEMP_ID_PREFIX).concat(Date.now()),
+            title: '',
+            status: status,
+            priority: 'Medium',
+            startDate: today,
+            dueDate: undefined,
+            createdAt: new Date().toISOString(),
+            requestType: 'Task',
+            department: 'IT',
+            description: '',
+            assignedTo: '',
+            createdBy: currentUserName,
+        };
+        setModalTask(draft);
+    };
+    var handleCloseModal = function () {
+        setModalTask(null);
+    };
+    // ---------------------------------------------------------------------------
+    // Save — handles both create and update via TaskModal's onSave prop
+    // ---------------------------------------------------------------------------
+    var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var isNew, finalAssigneeId, finalAssigneeName, resolved, normaliseDate, payload, created, persisted_1, updated_1, error_3;
+        var _a;
+        return tslib_1.__generator(this, function (_b) {
+            switch (_b.label) {
                 case 0:
-                    _a.trys.push([0, 2, , 3]);
-                    service = new TaskService_1.TaskService();
-                    safeUpdates_1 = tslib_1.__assign({}, updates);
-                    // Enforce permissions
-                    if (!canAssign && safeUpdates_1.assignedTo !== undefined) {
-                        delete safeUpdates_1.assignedTo;
-                    }
-                    if (!canAssign && safeUpdates_1.assignedToId !== undefined) {
-                        delete safeUpdates_1.assignedToId;
-                    }
-                    //Persist to SharePoint
-                    return [4 /*yield*/, service.updateTask(Number(id), {
-                            title: safeUpdates_1.title,
-                            status: safeUpdates_1.status,
-                            priority: safeUpdates_1.priority,
-                            assignedToId: safeUpdates_1.assignedToId,
-                            dueDate: safeUpdates_1.dueDate,
-                            description: safeUpdates_1.description,
-                            requestType: safeUpdates_1.requestType,
-                            department: safeUpdates_1.department
-                        })];
+                    _b.trys.push([0, 7, , 8]);
+                    isNew = task.id.startsWith(TEMP_ID_PREFIX);
+                    finalAssigneeId = (_a = task.assignedToId) !== null && _a !== void 0 ? _a : null;
+                    finalAssigneeName = task.assignedTo || '';
+                    if (!((!finalAssigneeId || finalAssigneeId <= 0) && (task.assignedToEmail || task.assignedToLoginName))) return [3 /*break*/, 2];
+                    return [4 /*yield*/, resolveSharePointUserId(task.assignedToEmail || '', task.assignedToLoginName || '')];
                 case 1:
-                    //Persist to SharePoint
-                    _a.sent();
-                    // Then update UI
-                    setTasks(function (currentTasks) {
-                        return currentTasks.map(function (task) {
-                            return task.id === id ? tslib_1.__assign(tslib_1.__assign({}, task), safeUpdates_1) : task;
-                        });
-                    });
-                    return [3 /*break*/, 3];
+                    resolved = _b.sent();
+                    if (resolved)
+                        finalAssigneeId = resolved;
+                    _b.label = 2;
                 case 2:
-                    error_2 = _a.sent();
-                    console.error("UPDATE TASK FAILED:", error_2);
-                    return [3 /*break*/, 3];
-                case 3: return [2 /*return*/];
-            }
-        });
-    }); };
-    var createTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var service, defaultAssignee, payload, created, newTask_1, error_3;
-        return tslib_1.__generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    _a.trys.push([0, 2, , 3]);
-                    service = new TaskService_1.TaskService();
-                    defaultAssignee = currentUserName || task.assignedTo || '';
-                    payload = tslib_1.__assign(tslib_1.__assign({}, task), { assignedTo: !canAssign
-                            ? defaultAssignee
-                            : task.requestType === 'Incident'
-                                ? defaultAssignee
-                                : task.assignedTo, assignedToId: !canAssign
-                            ? currentUserId
-                            : task.requestType === 'Incident'
-                                ? currentUserId
-                                : task.assignedToId, requestType: task.requestType || 'Task', department: task.department || 'IT', description: task.description || '', createdBy: task.createdBy || currentUserName });
-                    return [4 /*yield*/, service.createTask(payload)];
-                case 1:
-                    created = _a.sent();
-                    if (!created) {
-                        console.error("Create returned null — stopping UI update");
+                    if (!finalAssigneeId || finalAssigneeId <= 0) {
+                        finalAssigneeId = null;
+                        finalAssigneeName = '';
+                    }
+                    normaliseDate = function (value) {
+                        if (!value)
+                            return '';
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(value))
+                            return value;
+                        var parsed = new Date(value);
+                        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
+                    };
+                    payload = {
+                        title: task.title,
+                        status: task.status,
+                        priority: task.priority,
+                        assignedToId: finalAssigneeId,
+                        startDate: normaliseDate(task.startDate) || getTodayIso(),
+                        dueDate: normaliseDate(task.dueDate),
+                        description: task.description || '',
+                        requestType: task.requestType || 'Task',
+                        department: task.department || 'IT',
+                    };
+                    if (!isNew) return [3 /*break*/, 4];
+                    return [4 /*yield*/, taskService.createTask(payload)];
+                case 3:
+                    created = _b.sent();
+                    if (!(created === null || created === void 0 ? void 0 : created.id)) {
+                        console.error('TaskBoard: createTask returned no id', created);
                         return [2 /*return*/, null];
                     }
-                    newTask_1 = {
-                        id: created.id.toString(),
-                        title: created.title || 'Untitled Task',
-                        status: toTaskStatus(created.status),
-                        priority: created.priority === 'High' || created.priority === 'Low'
-                            ? created.priority
-                            : 'Medium',
-                        assignedTo: created.assignedTo || '',
-                        assignedToId: created.assignedToId,
-                        dueDate: created.dueDate || '',
-                        createdAt: created.startDate || new Date().toISOString(),
-                        requestType: created.requestType || 'Task',
-                        department: created.department || 'IT',
-                        description: created.description || '',
-                        createdBy: created.createdBy || currentUserName
-                    };
-                    // UPDATE STATE WITH REAL DATA
-                    setTasks(function (current) { return current.concat(newTask_1); });
-                    return [2 /*return*/, newTask_1];
-                case 2:
-                    error_3 = _a.sent();
-                    console.error('CREATE TASK FAILED:', error_3);
+                    persisted_1 = tslib_1.__assign(tslib_1.__assign({}, task), { id: created.id.toString(), assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, createdBy: currentUserName });
+                    setTasks(function (prev) { return tslib_1.__spreadArray(tslib_1.__spreadArray([], prev, true), [persisted_1], false); });
+                    return [2 /*return*/, persisted_1];
+                case 4: return [4 /*yield*/, taskService.updateTask(Number(task.id), payload)];
+                case 5:
+                    _b.sent();
+                    updated_1 = tslib_1.__assign(tslib_1.__assign({}, task), { assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate });
+                    setTasks(function (prev) { return prev.map(function (t) { return (t.id === task.id ? updated_1 : t); }); });
+                    return [2 /*return*/, updated_1];
+                case 6: return [3 /*break*/, 8];
+                case 7:
+                    error_3 = _b.sent();
+                    console.error('TaskBoard: saveTask failed', error_3);
                     return [2 /*return*/, null];
-                case 3: return [2 /*return*/];
+                case 8: return [2 /*return*/];
             }
         });
     }); };
-    var deleteTask = function (id) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var service, error_4;
+    // ---------------------------------------------------------------------------
+    // Delete
+    // ---------------------------------------------------------------------------
+    var handleDeleteTask = function (id) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var error_4;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    _a.trys.push([0, 2, , 3]);
-                    service = new TaskService_1.TaskService();
-                    return [4 /*yield*/, service.deleteTask(Number(id))];
+                    _a.trys.push([0, 3, , 4]);
+                    if (!!id.startsWith(TEMP_ID_PREFIX)) return [3 /*break*/, 2];
+                    return [4 /*yield*/, taskService.deleteTask(Number(id))];
                 case 1:
-                    _a.sent(); // 🔥 convert string → number
-                    setTasks(function (currentTasks) {
-                        return currentTasks.filter(function (task) { return task.id !== id; });
-                    });
-                    return [3 /*break*/, 3];
+                    _a.sent();
+                    _a.label = 2;
                 case 2:
+                    setTasks(function (prev) { return prev.filter(function (t) { return t.id !== id; }); });
+                    return [3 /*break*/, 4];
+                case 3:
                     error_4 = _a.sent();
-                    console.error("DELETE TASK FAILED:", error_4);
-                    return [3 /*break*/, 3];
-                case 3: return [2 /*return*/];
+                    console.error('TaskBoard: delete failed', error_4);
+                    return [3 /*break*/, 4];
+                case 4: return [2 /*return*/];
             }
         });
     }); };
-    var handleTaskClick = function (taskId) {
-        setSelectedTaskId(taskId);
+    // ---------------------------------------------------------------------------
+    // TableView still uses the old per-field updateTask signature — keep it
+    // ---------------------------------------------------------------------------
+    var handleUpdateTask = function (id, updates) {
+        if (!canAssign && updates.assignedTo !== undefined) {
+            var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
+            updates = rest;
+        }
+        setTasks(function (prev) { return prev.map(function (t) { return (t.id === id ? tslib_1.__assign(tslib_1.__assign({}, t), updates) : t); }); });
     };
-    var handleClosePanel = function () {
-        setSelectedTaskId(null);
-    };
-    var renderPlaceholderView = function (label) {
-        return (React.createElement("div", { style: {
-                width: '100%',
-                padding: '20px 16px',
-                color: '#e2e8f0',
-                backgroundColor: '#171c33'
-            } },
-            label,
-            " view coming soon."));
-    };
+    // ---------------------------------------------------------------------------
+    // Render helpers
+    // ---------------------------------------------------------------------------
     var renderActiveView = function (view) {
-        if (view === 'board') {
-            return React.createElement(BoardView_1.default, { tasks: tasks, statuses: taskStatuses, onTaskClick: handleTaskClick, createTask: createTask });
+        if (isLoading) {
+            return (React.createElement("div", { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px', color: '#f8fafc' } }, "Loading tasks..."));
         }
-        if (view === 'table') {
-            return React.createElement(TableView_1.default, { tasks: tasks, statuses: taskStatuses, updateTask: updateTask, deleteTask: deleteTask, canAssign: canAssign });
+        switch (view) {
+            case 'board':
+                return (React.createElement(BoardView_1.default, { tasks: tasks, statuses: TASK_STATUSES, onTaskClick: handleTaskClick, onNewTask: handleNewTask }));
+            case 'table':
+                return (React.createElement(TableView_1.default, { tasks: tasks, statuses: TASK_STATUSES, updateTask: handleUpdateTask, deleteTask: handleDeleteTask, canAssign: canAssign }));
+            case 'calendar':
+                return (React.createElement(CalendarView_1.default, { tasks: tasks, onTaskClick: function (id) {
+                        var task = tasks.find(function (t) { return t.id === id; });
+                        if (task)
+                            handleTaskClick(task);
+                    } }));
+            case 'gantt':
+                return (React.createElement(GanttView_1.default, { tasks: tasks, statuses: TASK_STATUSES, onTaskClick: function (id) {
+                        var task = tasks.find(function (t) { return t.id === id; });
+                        if (task)
+                            handleTaskClick(task);
+                    } }));
+            case 'chart':
+                return React.createElement(ChartView_1.default, { tasks: tasks, statuses: TASK_STATUSES });
+            default:
+                return React.createElement(React.Fragment, null);
         }
-        if (view === 'calendar') {
-            return React.createElement(CalendarView_1.default, { tasks: tasks, onTaskClick: handleTaskClick });
-        }
-        if (view === 'gantt') {
-            return React.createElement(GanttView_1.default, { tasks: tasks, statuses: taskStatuses, onTaskClick: handleTaskClick });
-        }
-        return React.createElement(ChartView_1.default, { tasks: tasks, statuses: taskStatuses });
     };
+    // ---------------------------------------------------------------------------
+    // Render
+    // ---------------------------------------------------------------------------
     return (React.createElement(react_beautiful_dnd_1.DragDropContext, { onDragEnd: handleDragEnd },
         React.createElement("div", { style: { width: '100%', backgroundColor: '#171c33' } },
-            React.createElement("div", { style: { display: 'flex', gap: '8px', padding: '12px 16px 0 16px' } }, viewTabs.map(function (tab) { return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
+            React.createElement("div", { style: { display: 'flex', gap: '8px', padding: '12px 16px 0 16px' } }, VIEW_TABS.map(function (tab) { return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
                     backgroundColor: activeView === tab.key ? '#334155' : hoveredTab === tab.key ? '#27324f' : '#1f2a44',
                     color: activeView === tab.key ? '#f8fafc' : '#e2e8f0',
                     border: '1px solid #475569',
@@ -397,14 +414,14 @@ var TaskBoard = function () {
                     cursor: 'pointer',
                     fontWeight: activeView === tab.key ? 700 : 500,
                     transition: 'background-color 160ms ease, color 160ms ease, transform 120ms ease',
-                    transform: hoveredTab === tab.key ? 'translateY(-1px)' : 'translateY(0)'
+                    transform: hoveredTab === tab.key ? 'translateY(-1px)' : 'translateY(0)',
                 } }, tab.label)); })),
             React.createElement("div", { style: {
                     transition: 'opacity 180ms ease, transform 180ms ease',
                     opacity: isViewVisible ? 1 : 0,
-                    transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)'
+                    transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
                 } }, renderActiveView(displayedView))),
-        React.createElement(TaskPanel_1.default, { selectedTask: selectedTask, onClose: handleClosePanel, updateTask: updateTask, deleteTask: deleteTask, canAssign: canAssign })));
+        React.createElement(TaskModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: context.pageContext.web.absoluteUrl, currentUserName: currentUserName, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
 };
 exports.default = TaskBoard;
 //# sourceMappingURL=TaskBoard.js.map

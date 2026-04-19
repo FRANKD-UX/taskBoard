@@ -5,7 +5,7 @@ import type { DropResult } from 'react-beautiful-dnd';
 
 import type { ITaskBoardProps } from './ITaskBoardProps';
 import BoardView from './BoardView';
-import TaskPanel from './TaskPanel';
+import TaskModal from './TaskModal';
 import TableView from './TableView';
 import CalendarView from './CalendarView';
 import ChartView from './ChartView';
@@ -15,415 +15,428 @@ import { TaskService } from '../../../services/TaskService';
 import { getSP } from '../../../pnpjsConfig';
 import { getUserRole } from '../../../services/UserRoleService';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
-const mockTasks: Task[] = [
-  {
-    id: '1',
-    title: 'Fix network issue',
-    status: 'InProgress',
-    priority: 'High',
-    assignedTo: 'Frank Ndlovu',
-    dueDate: '2026-04-15',
-    createdAt: '2026-04-01',
-    requestType: 'Incident',
-    department: 'IT',
-    description: 'Intermittent WAN drop on branch edge router.',
-    createdBy: 'Frank Ndlovu'
-  },
-  {
-    id: '2',
-    title: 'Update billing system',
-    status: 'Backlog',
-    priority: 'Medium',
-    assignedTo: 'Jacobus Coetzee',
-    dueDate: '2026-04-18',
-    createdAt: '2026-04-02',
-    requestType: 'Task',
-    department: 'Finance',
-    description: 'Apply tax rule updates for April release.',
-    createdBy: 'Jacobus Coetzee'
-  },
-  {
-    id: '3',
-    title: 'Deploy new router config',
-    status: 'Completed',
-    priority: 'Low',
-    assignedTo: 'Nhalnhla Mkhithi',
-    dueDate: '2026-04-10',
-    createdAt: '2026-04-03',
-    requestType: 'Task',
-    department: 'Operations',
-    description: 'Roll out approved QoS profile to regional hubs.',
-    createdBy: 'Nhalnhla Mkhithi'
-  }
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const TEMP_ID_PREFIX = 'temp_';
+
+const TASK_STATUSES: TaskStatus[] = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
+
+const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
+  { key: 'board',    label: 'Board'    },
+  { key: 'table',   label: 'Table'    },
+  { key: 'calendar',label: 'Calendar' },
+  { key: 'gantt',   label: 'Gantt'    },
+  { key: 'chart',   label: 'Chart'    },
 ];
 
-const taskStatuses: TaskStatus[] = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
 
 const toTaskStatus = (value?: string): TaskStatus => {
-  if (value && taskStatuses.indexOf(value as TaskStatus) > -1) {
+  if (value && TASK_STATUSES.indexOf(value as TaskStatus) > -1) {
     return value as TaskStatus;
   }
-
   return 'Unassigned';
 };
 
-const viewTabs: Array<{ key: ViewKey; label: string }> = [
-  { key: 'board', label: 'Board' },
-  { key: 'table', label: 'Table' },
-  { key: 'calendar', label: 'Calendar' },
-  { key: 'gantt', label: 'Gantt' },
-  { key: 'chart', label: 'Chart' }
-];
+const getTodayIso = (): string => {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+};
 
 const groupTasksByStatus = (tasks: Task[]): Record<TaskStatus, Task[]> => {
   const grouped: Record<TaskStatus, Task[]> = {
-    Unassigned: [],
-    Backlog: [],
-    ThisWeek: [],
-    InProgress: [],
-    Completed: []
+    Unassigned: [], Backlog: [], ThisWeek: [], InProgress: [], Completed: [],
   };
-
   tasks.forEach((task) => {
-    if (taskStatuses.indexOf(task.status) > -1) {
+    if (TASK_STATUSES.indexOf(task.status) > -1) {
       grouped[task.status].push(task);
     } else {
       grouped.Unassigned.push(task);
     }
   });
-
   return grouped;
 };
 
-const reorderTasksAfterDrag = (items: Task[], result: DropResult): Task[] => {
+const reorderTasksAfterDrag = (tasks: Task[], result: DropResult): Task[] => {
   const { source, destination } = result;
+  if (!destination) return tasks;
 
-  if (!destination) {
-    return items;
-  }
-
-  const sourceStatus = source.droppableId as TaskStatus;
-  const destinationStatus = destination.droppableId as TaskStatus;
+  const srcStatus = source.droppableId as TaskStatus;
+  const dstStatus = destination.droppableId as TaskStatus;
 
   if (
-    taskStatuses.indexOf(sourceStatus) === -1 ||
-    taskStatuses.indexOf(destinationStatus) === -1 ||
-    (sourceStatus === destinationStatus && source.index === destination.index)
+    TASK_STATUSES.indexOf(srcStatus) === -1 ||
+    TASK_STATUSES.indexOf(dstStatus) === -1 ||
+    (srcStatus === dstStatus && source.index === destination.index)
   ) {
-    return items;
+    return tasks;
   }
 
-  const grouped = groupTasksByStatus(items);
-  const sourceTasks = grouped[sourceStatus].slice();
-  const destinationTasks = sourceStatus === destinationStatus ? sourceTasks : grouped[destinationStatus].slice();
+  const grouped = groupTasksByStatus(tasks);
+  const srcTasks = grouped[srcStatus].slice();
+  const dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
 
-  const [movedTask] = sourceTasks.splice(source.index, 1);
-  if (!movedTask) {
-    return items;
-  }
+  const [moved] = srcTasks.splice(source.index, 1);
+  if (!moved) return tasks;
 
-  destinationTasks.splice(destination.index, 0, {
-    ...movedTask,
-    status: destinationStatus
-  });
+  dstTasks.splice(destination.index, 0, { ...moved, status: dstStatus });
+  grouped[srcStatus] = srcTasks;
+  grouped[dstStatus] = dstTasks;
 
-  grouped[sourceStatus] = sourceTasks;
-  grouped[destinationStatus] = destinationTasks;
-
-  return taskStatuses.reduce<Task[]>((acc, status) => {
-    return acc.concat(grouped[status]);
-  }, []);
+  return TASK_STATUSES.reduce<Task[]>((acc, s) => acc.concat(grouped[s]), []);
 };
 
-const TaskBoard: React.FC<ITaskBoardProps> = (): React.ReactElement => {
+const resolveSharePointUserId = async (email: string, loginName: string): Promise<number | null> => {
+  const sp = getSP();
+  if (email?.trim()) {
+    try {
+      const user = await sp.web.siteUsers.getByEmail(email.trim())();
+      if (user?.Id) return user.Id;
+    } catch { /* fall through to loginName */ }
+  }
+  if (loginName?.trim()) {
+    try {
+      const user = await sp.web.ensureUser(loginName.trim());
+      const userAny = user as any;
+      if (userAny?.Id) return userAny.Id;
+      if (userAny?.data?.Id) return userAny.data.Id;
+    } catch { /* unresolvable */ }
+  }
+  return null;
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [modalTask, setModalTask] = useState<Task | null>(null);
   const [activeView, setActiveView] = useState<ViewKey>('board');
   const [displayedView, setDisplayedView] = useState<ViewKey>('board');
   const [isViewVisible, setIsViewVisible] = useState<boolean>(true);
   const [hoveredTab, setHoveredTab] = useState<ViewKey | null>(null);
   const [canAssign, setCanAssign] = useState<boolean>(false);
   const [currentUserName, setCurrentUserName] = useState<string>('');
-  const [currentUserId, setCurrentUserId] = useState<number | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const taskService = useMemo(() => new TaskService(), []);
+
+  // Make the SPFx context available on window so PeoplePicker's
+  // getSPHttpClient() helper can reach it without prop-drilling.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).spfxContext = context;
+  }, [context]);
+
+  // ---------------------------------------------------------------------------
+  // Initial data load
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
     const loadTasks = async (): Promise<void> => {
-      const service = new TaskService();
-      const sp = getSP();
-      const currentUser = await sp.web.currentUser();
-      setCurrentUserName(currentUser.Title || currentUser.Email || '');
-      setCurrentUserId(currentUser.Id);
-      const roleData = await getUserRole(currentUser.Email);
-      console.log('CURRENT USER:', currentUser);
-      console.log('ROLE DATA:', roleData);
-      const hasAssignPermission = roleData?.canAssign === true;
-      setCanAssign(hasAssignPermission);
+      try {
+        setIsLoading(true);
+        const sp = getSP();
 
-      const loadedTasks = await service.getTasks();
-      console.log('TASK DATA:', loadedTasks);
+        const user = await sp.web.currentUser();
+        setCurrentUserName(user.Title || '');
 
-      (window as any).taskBoardDebug = {
-        currentUser,
-        roleData,
-        loadedTasks,
-        canAssign: hasAssignPermission,
-        loadError: null
-      };
+        const role = await getUserRole(user.Email);
+        setCanAssign(role?.canAssign === true);
 
-      setTasks(
-        loadedTasks.map((task) => ({
-          id: task.id.toString(),
-          title: task.title || 'Untitled Task',
-          status: toTaskStatus(task.status),
-          priority: task.priority === 'High' || task.priority === 'Low' ? task.priority : 'Medium',
-          assignedTo: task.assignedTo || '',
-          assignedToId: task.assignedToId,
-          dueDate: task.dueDate || '',
-          createdAt: task.startDate || new Date().toISOString(),
-          requestType: task.requestType || 'Task',
-          department: task.department || 'IT',
-          description: task.description || '',
-          createdBy: currentUser.Title || currentUser.Email || ''
-        }))
-      );
+        const data = await taskService.getTasks();
+
+        setTasks(
+          data.map((t: any) => ({
+            id: t.id.toString(),
+            title: t.title,
+            status: toTaskStatus(t.status),
+            priority: t.priority,
+            assignedTo: t.assignedTo,
+            assignedToId: t.assignedToId,
+            assignedToEmail: t.assignedToEmail,
+            assignedToLoginName: t.assignedToLoginName,
+            startDate: t.startDate,
+            dueDate: t.dueDate,
+            createdAt: new Date().toISOString(),
+            requestType: t.requestType,
+            department: t.department,
+            description: t.description,
+            createdBy: user.Title,
+          }))
+        );
+      } catch (error) {
+        console.error('TaskBoard: load failed', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    loadTasks().catch((error) => {
-      console.error('Failed to load tasks from SharePoint.', error);
-      (window as any).taskBoardDebug = {
-        loadError: error,
-        loadedTasks: [],
-        fallbackTasks: mockTasks,
-        canAssign: false
-      };
-      setTasks(mockTasks);
-    });
-  }, []);
+    loadTasks();
+  }, [taskService]);
+
+  // ---------------------------------------------------------------------------
+  // View transition fade
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    console.log('TASK DATA:', tasks);
-  }, [tasks]);
-
-  useEffect(() => {
-    (window as any).taskBoardDebug = {
-      ...(window as any).taskBoardDebug,
-      tasks,
-      canAssign,
-      selectedTaskId
-    };
-  }, [tasks, canAssign, selectedTaskId]);
-
-  useEffect(() => {
-    if (activeView === displayedView) {
-      return;
-    }
-
+    if (activeView === displayedView) return;
     setIsViewVisible(false);
-    const timeout = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDisplayedView(activeView);
       setIsViewVisible(true);
     }, 120);
-
-    return () => clearTimeout(timeout);
+    return () => clearTimeout(timer);
   }, [activeView, displayedView]);
 
-  const selectedTask = useMemo<Task | null>(() => {
-    if (selectedTaskId === null) {
-      return null;
-    }
-
-    return tasks.find((task) => task.id === selectedTaskId) || null;
-  }, [selectedTaskId, tasks]);
+  // ---------------------------------------------------------------------------
+  // Drag and drop
+  // ---------------------------------------------------------------------------
 
   const handleDragEnd = async (result: DropResult): Promise<void> => {
-  const { source, destination, draggableId } = result;
+    const { destination, draggableId } = result;
+    if (!destination) return;
 
-  if (!destination) return;
-
-  const newStatus = destination.droppableId as TaskStatus;
-
-  try {
-    const service = new TaskService();
-
-    // Persist to SharePoint FIRST
-    await service.updateTask(Number(draggableId), {
-      status: newStatus
-    });
-
-    // Then update UI
-    setTasks((currentTasks) =>
-      reorderTasksAfterDrag(currentTasks, result)
-    );
-
-  } catch (error) {
-    console.error("DRAG UPDATE FAILED:", error);
-  }
-};
-
-  const updateTask = async (id: string, updates: Partial<Task>): Promise<void> => {
-  try {
-    const service = new TaskService();
-
-    const safeUpdates: Partial<Task> = { ...updates };
-
-    // Enforce permissions
-    if (!canAssign && safeUpdates.assignedTo !== undefined) {
-      delete safeUpdates.assignedTo;
+    const newStatus = destination.droppableId as TaskStatus;
+    try {
+      await taskService.updateTask(Number(draggableId), { status: newStatus });
+      setTasks((current) => reorderTasksAfterDrag(current, result));
+    } catch (error) {
+      console.error('TaskBoard: drag update failed', error);
     }
+  };
 
-    if (!canAssign && safeUpdates.assignedToId !== undefined) {
-      delete safeUpdates.assignedToId;
-    }
+  // ---------------------------------------------------------------------------
+  // Modal triggers
+  // ---------------------------------------------------------------------------
 
-    //Persist to SharePoint
-    await service.updateTask(Number(id), {
-      title: safeUpdates.title,
-      status: safeUpdates.status,
-      priority: safeUpdates.priority,
-      assignedToId: safeUpdates.assignedToId,
-      dueDate: safeUpdates.dueDate,
-      description: safeUpdates.description,
-      requestType: safeUpdates.requestType,
-      department: safeUpdates.department
-    });
+  /**
+   * Opens the modal for an EXISTING task (card click, calendar click, etc.)
+   */
+  const handleTaskClick = (task: Task): void => {
+    setModalTask(task);
+  };
 
-    // Then update UI
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === id ? { ...task, ...safeUpdates } : task
-      )
-    );
-
-  } catch (error) {
-    console.error("UPDATE TASK FAILED:", error);
-  }
-};
-
-    const createTask = async (task: Task): Promise<Task | null> => {
-  try {
-    const service = new TaskService();
-
-    const defaultAssignee = currentUserName || task.assignedTo || '';
-
-    const payload = {
-      ...task,
-      assignedTo:
-        !canAssign
-          ? defaultAssignee
-          : task.requestType === 'Incident'
-          ? defaultAssignee
-          : task.assignedTo,
-      assignedToId:
-        !canAssign
-          ? currentUserId
-          : task.requestType === 'Incident'
-          ? currentUserId
-          : task.assignedToId,
-      requestType: task.requestType || 'Task',
-      department: task.department || 'IT',
-      description: task.description || '',
-      createdBy: task.createdBy || currentUserName
+  /**
+   * Opens the modal in NEW TASK mode.
+   * We build a minimal temp Task so TaskModal gets a properly shaped object.
+   */
+  const handleNewTask = (status: TaskStatus): void => {
+    const today = getTodayIso();
+    const draft: Task = {
+      id: `${TEMP_ID_PREFIX}${Date.now()}`,
+      title: '',
+      status,
+      priority: 'Medium',
+      startDate: today,
+      dueDate: undefined,
+      createdAt: new Date().toISOString(),
+      requestType: 'Task',
+      department: 'IT',
+      description: '',
+      assignedTo: '',
+      createdBy: currentUserName,
     };
+    setModalTask(draft);
+  };
 
-    // SAVE TO SHAREPOINT
-    const created = await service.createTask(payload);
-    if (!created) {
-       console.error("Create returned null — stopping UI update");
-       return null;
+  const handleCloseModal = (): void => {
+    setModalTask(null);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Save — handles both create and update via TaskModal's onSave prop
+  // ---------------------------------------------------------------------------
+
+  const handleSaveTask = async (task: Task): Promise<Task | null> => {
+    try {
+      const isNew = task.id.startsWith(TEMP_ID_PREFIX);
+
+      // Resolve assignee SP user ID from email / loginName if not already known
+      let finalAssigneeId: number | null = task.assignedToId ?? null;
+      let finalAssigneeName = task.assignedTo || '';
+
+      if ((!finalAssigneeId || finalAssigneeId <= 0) && (task.assignedToEmail || task.assignedToLoginName)) {
+        const resolved = await resolveSharePointUserId(
+          task.assignedToEmail || '',
+          task.assignedToLoginName || ''
+        );
+        if (resolved) finalAssigneeId = resolved;
+      }
+
+      if (!finalAssigneeId || finalAssigneeId <= 0) {
+        finalAssigneeId = null;
+        finalAssigneeName = '';
+      }
+
+      const normaliseDate = (value?: string): string => {
+        if (!value) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const parsed = new Date(value);
+        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
+      };
+
+      const payload = {
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        assignedToId: finalAssigneeId,
+        startDate: normaliseDate(task.startDate) || getTodayIso(),
+        dueDate: normaliseDate(task.dueDate),
+        description: task.description || '',
+        requestType: task.requestType || 'Task',
+        department: task.department || 'IT',
+      };
+
+      if (isNew) {
+        const created = await taskService.createTask(payload);
+        if (!created?.id) {
+          console.error('TaskBoard: createTask returned no id', created);
+          return null;
+        }
+
+        const persisted: Task = {
+          ...task,
+          id: created.id.toString(),
+          assignedTo: finalAssigneeName,
+          assignedToId: finalAssigneeId ?? undefined,
+          startDate: payload.startDate,
+          dueDate: payload.dueDate,
+          createdBy: currentUserName,
+        };
+
+        setTasks((prev) => [...prev, persisted]);
+        return persisted;
+      } else {
+        await taskService.updateTask(Number(task.id), payload);
+
+        const updated: Task = {
+          ...task,
+          assignedTo: finalAssigneeName,
+          assignedToId: finalAssigneeId ?? undefined,
+          startDate: payload.startDate,
+          dueDate: payload.dueDate,
+        };
+
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+        return updated;
+      }
+    } catch (error) {
+      console.error('TaskBoard: saveTask failed', error);
+      return null;
     }
-    // MAP RESPONSE BACK TO UI MODEL
-    const newTask: Task = {
-      id: created.id.toString(),
-      title: created.title || 'Untitled Task',
-      status: toTaskStatus(created.status),
-      priority:
-        created.priority === 'High' || created.priority === 'Low'
-          ? created.priority
-          : 'Medium',
-      assignedTo: created.assignedTo || '',
-      assignedToId: created.assignedToId,
-      dueDate: created.dueDate || '',
-      createdAt: created.startDate || new Date().toISOString(),
-      requestType: created.requestType || 'Task',
-      department: created.department || 'IT',
-      description: created.description || '',
-      createdBy: created.createdBy || currentUserName
-    };
-
-    // UPDATE STATE WITH REAL DATA
-    setTasks((current) => current.concat(newTask));
-
-    return newTask;
-  } catch (error) {
-    console.error('CREATE TASK FAILED:', error);
-    return null;
-  }
-};
-
-  const deleteTask = async (id: string): Promise<void> => {
-  try {
-    const service = new TaskService();
-
-    await service.deleteTask(Number(id)); // 🔥 convert string → number
-
-    setTasks((currentTasks) =>
-      currentTasks.filter((task) => task.id !== id)
-    );
-  } catch (error) {
-    console.error("DELETE TASK FAILED:", error);
-  }
-};
-
-  const handleTaskClick = (taskId: string): void => {
-    setSelectedTaskId(taskId);
-  };
-  
-  const handleClosePanel = (): void => {
-    setSelectedTaskId(null);
   };
 
-  const renderPlaceholderView = (label: string): React.ReactElement => {
-    return (
-      <div
-        style={{
-          width: '100%',
-          padding: '20px 16px',
-          color: '#e2e8f0',
-          backgroundColor: '#171c33'
-        }}
-      >
-        {label} view coming soon.
-      </div>
-    );
+  // ---------------------------------------------------------------------------
+  // Delete
+  // ---------------------------------------------------------------------------
+
+  const handleDeleteTask = async (id: string): Promise<void> => {
+    try {
+      if (!id.startsWith(TEMP_ID_PREFIX)) {
+        await taskService.deleteTask(Number(id));
+      }
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+    } catch (error) {
+      console.error('TaskBoard: delete failed', error);
+    }
   };
+
+  // ---------------------------------------------------------------------------
+  // TableView still uses the old per-field updateTask signature — keep it
+  // ---------------------------------------------------------------------------
+
+  const handleUpdateTask = (id: string, updates: Partial<Task>): void => {
+    if (!canAssign && updates.assignedTo !== undefined) {
+      const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
+      updates = rest;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+  };
+
+  // ---------------------------------------------------------------------------
+  // Render helpers
+  // ---------------------------------------------------------------------------
 
   const renderActiveView = (view: ViewKey): React.ReactElement => {
-    if (view === 'board') {
-      return <BoardView tasks={tasks} statuses={taskStatuses} onTaskClick={handleTaskClick} createTask={createTask} />;
+    if (isLoading) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px', color: '#f8fafc' }}>
+          Loading tasks...
+        </div>
+      );
     }
 
-    if (view === 'table') {
-      return <TableView tasks={tasks} statuses={taskStatuses} updateTask={updateTask} deleteTask={deleteTask} canAssign={canAssign} />;
+    switch (view) {
+      case 'board':
+        return (
+          <BoardView
+            tasks={tasks}
+            statuses={TASK_STATUSES}
+            onTaskClick={handleTaskClick}
+            onNewTask={handleNewTask}
+          />
+        );
+      case 'table':
+        return (
+          <TableView
+            tasks={tasks}
+            statuses={TASK_STATUSES}
+            updateTask={handleUpdateTask}
+            deleteTask={handleDeleteTask}
+            canAssign={canAssign}
+          />
+        );
+      case 'calendar':
+        return (
+          <CalendarView
+            tasks={tasks}
+            onTaskClick={(id) => {
+              const task = tasks.find((t) => t.id === id);
+              if (task) handleTaskClick(task);
+            }}
+          />
+        );
+      case 'gantt':
+        return (
+          <GanttView
+            tasks={tasks}
+            statuses={TASK_STATUSES}
+            onTaskClick={(id) => {
+              const task = tasks.find((t) => t.id === id);
+              if (task) handleTaskClick(task);
+            }}
+          />
+        );
+      case 'chart':
+        return <ChartView tasks={tasks} statuses={TASK_STATUSES} />;
+      default:
+        return <></>;
     }
-
-    if (view === 'calendar') {
-      return <CalendarView tasks={tasks} onTaskClick={handleTaskClick} />;
-    }
-
-    if (view === 'gantt') {
-      return <GanttView tasks={tasks} statuses={taskStatuses} onTaskClick={handleTaskClick} />;
-    }
-
-    return <ChartView tasks={tasks} statuses={taskStatuses} />;
   };
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
       <div style={{ width: '100%', backgroundColor: '#171c33' }}>
+
+        {/* View tab bar */}
         <div style={{ display: 'flex', gap: '8px', padding: '12px 16px 0 16px' }}>
-          {viewTabs.map((tab) => (
+          {VIEW_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
@@ -439,7 +452,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = (): React.ReactElement => {
                 cursor: 'pointer',
                 fontWeight: activeView === tab.key ? 700 : 500,
                 transition: 'background-color 160ms ease, color 160ms ease, transform 120ms ease',
-                transform: hoveredTab === tab.key ? 'translateY(-1px)' : 'translateY(0)'
+                transform: hoveredTab === tab.key ? 'translateY(-1px)' : 'translateY(0)',
               }}
             >
               {tab.label}
@@ -447,18 +460,26 @@ const TaskBoard: React.FC<ITaskBoardProps> = (): React.ReactElement => {
           ))}
         </div>
 
-        <div
-          style={{
-            transition: 'opacity 180ms ease, transform 180ms ease',
-            opacity: isViewVisible ? 1 : 0,
-            transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)'
-          }}
-        >
+        {/* View content */}
+        <div style={{
+          transition: 'opacity 180ms ease, transform 180ms ease',
+          opacity: isViewVisible ? 1 : 0,
+          transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
+        }}>
           {renderActiveView(displayedView)}
         </div>
       </div>
 
-      <TaskPanel selectedTask={selectedTask} onClose={handleClosePanel} updateTask={updateTask} deleteTask={deleteTask} canAssign={canAssign} />
+      {/* Single unified modal for both create and edit */}
+      <TaskModal
+        task={modalTask}
+        canAssign={canAssign}
+        siteUrl={context.pageContext.web.absoluteUrl}
+        currentUserName={currentUserName}
+        onSave={handleSaveTask}
+        onDelete={handleDeleteTask}
+        onClose={handleCloseModal}
+      />
     </DragDropContext>
   );
 };

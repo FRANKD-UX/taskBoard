@@ -1,21 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
+// TableView.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var tableStyle = {
     width: '100%',
     tableLayout: 'fixed',
     borderCollapse: 'collapse',
-    color: '#e2e8f0'
+    color: '#e2e8f0',
 };
 var cellStyle = {
     borderBottom: '1px solid #334155',
-    borderRight: '1px solid #2b3a57',
+    borderRight: '1px solid #334155',
     padding: '10px 12px',
-    textAlign: 'left'
+    textAlign: 'left',
 };
-var headerCellStyle = tslib_1.__assign(tslib_1.__assign({}, cellStyle), { position: 'sticky', top: 0, zIndex: 2, backgroundColor: '#24314a', fontWeight: 700 });
+var headerCellStyle = tslib_1.__assign(tslib_1.__assign({}, cellStyle), { position: 'sticky', top: 0, zIndex: 2, backgroundColor: '#25344f', color: '#f8fafc', fontWeight: 700, borderBottom: '2px solid #475569' });
 var columnWidths = {
     title: '33%',
     assignedTo: '15%',
@@ -40,6 +41,8 @@ var singleLineTextStyle = {
 };
 var avatarPalette = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 var getInitials = function (name) {
+    if (!name || name === 'Unassigned')
+        return 'U';
     return name
         .split(' ')
         .filter(function (part) { return part.length > 0; })
@@ -48,7 +51,7 @@ var getInitials = function (name) {
         .join('');
 };
 var getAvatarColor = function (name) {
-    if (!name) {
+    if (!name || name === 'Unassigned') {
         return '#64748b';
     }
     var hash = name.split('').reduce(function (acc, char) { return acc + char.charCodeAt(0); }, 0);
@@ -71,8 +74,8 @@ var getStatusColor = function (status) {
     }
 };
 var getTimelineProgress = function (task) {
-    var start = new Date(task.createdAt).getTime();
-    var end = new Date(task.dueDate).getTime();
+    var start = new Date(task.createdAt || new Date()).getTime();
+    var end = new Date(task.dueDate || new Date()).getTime();
     var now = Date.now();
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) {
         return task.dueDate ? 65 : 25;
@@ -204,7 +207,7 @@ var TableView = function (_a) {
         var normalizedSearch = searchTerm.trim().toLowerCase();
         var matchesSearch = normalizedSearch.length === 0 ||
             task.title.toLowerCase().indexOf(normalizedSearch) > -1 ||
-            task.assignedTo.toLowerCase().indexOf(normalizedSearch) > -1;
+            (task.assignedTo || '').toLowerCase().indexOf(normalizedSearch) > -1;
         if (!matchesSearch) {
             return false;
         }
@@ -324,7 +327,7 @@ var TableView = function (_a) {
                                             width: '24px',
                                             height: '24px',
                                             borderRadius: '50%',
-                                            backgroundColor: getAvatarColor(task.assignedTo),
+                                            backgroundColor: getAvatarColor(task.assignedTo || 'Unassigned'),
                                             color: '#e2e8f0',
                                             display: 'inline-flex',
                                             alignItems: 'center',

@@ -1,3 +1,4 @@
+// TableView.tsx
 import * as React from 'react';
 import { useState } from 'react';
 
@@ -22,14 +23,14 @@ const tableStyle: React.CSSProperties = {
   width: '100%',
   tableLayout: 'fixed',
   borderCollapse: 'collapse',
-  color: '#e2e8f0'
+  color: '#e2e8f0',
 };
 
 const cellStyle: React.CSSProperties = {
   borderBottom: '1px solid #334155',
-  borderRight: '1px solid #2b3a57',
+  borderRight: '1px solid #334155',
   padding: '10px 12px',
-  textAlign: 'left'
+  textAlign: 'left',
 };
 
 const headerCellStyle: React.CSSProperties = {
@@ -37,8 +38,10 @@ const headerCellStyle: React.CSSProperties = {
   position: 'sticky',
   top: 0,
   zIndex: 2,
-  backgroundColor: '#24314a',
-  fontWeight: 700
+  backgroundColor: '#25344f',
+  color: '#f8fafc',
+  fontWeight: 700,
+  borderBottom: '2px solid #475569',
 };
 
 const columnWidths: Record<'title' | 'assignedTo' | 'status' | 'priority' | 'dueDate' | 'timeline', string> = {
@@ -68,7 +71,9 @@ const singleLineTextStyle: React.CSSProperties = {
 
 const avatarPalette: string[] = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 
-const getInitials = (name: string): string => {
+const getInitials = (name: string | undefined): string => {
+  if (!name || name === 'Unassigned') return 'U';
+  
   return name
     .split(' ')
     .filter((part) => part.length > 0)
@@ -77,8 +82,8 @@ const getInitials = (name: string): string => {
     .join('');
 };
 
-const getAvatarColor = (name: string): string => {
-  if (!name) {
+const getAvatarColor = (name: string | undefined): string => {
+  if (!name || name === 'Unassigned') {
     return '#64748b';
   }
 
@@ -104,8 +109,8 @@ const getStatusColor = (status: TaskStatus): string => {
 };
 
 const getTimelineProgress = (task: Task): number => {
-  const start = new Date(task.createdAt).getTime();
-  const end = new Date(task.dueDate).getTime();
+  const start = new Date(task.createdAt || new Date()).getTime();
+  const end = new Date(task.dueDate || new Date()).getTime();
   const now = Date.now();
 
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) {
@@ -123,7 +128,7 @@ const getTimelineProgress = (task: Task): number => {
   return Math.round(((now - start) / (end - start)) * 100);
 };
 
-const formatDateReadable = (value: string): string => {
+const formatDateReadable = (value?: string): string => {
   if (!value) {
     return 'N/A';
   }
@@ -140,7 +145,7 @@ const formatDateReadable = (value: string): string => {
   });
 };
 
-const formatDateCompact = (value: string): string => {
+const formatDateCompact = (value?: string): string => {
   if (!value) {
     return 'N/A';
   }
@@ -274,7 +279,7 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
       const matchesSearch =
         normalizedSearch.length === 0 ||
         task.title.toLowerCase().indexOf(normalizedSearch) > -1 ||
-        task.assignedTo.toLowerCase().indexOf(normalizedSearch) > -1;
+        (task.assignedTo || '').toLowerCase().indexOf(normalizedSearch) > -1;
 
       if (!matchesSearch) {
         return false;
@@ -488,7 +493,7 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
                                   width: '24px',
                                   height: '24px',
                                   borderRadius: '50%',
-                                  backgroundColor: getAvatarColor(task.assignedTo),
+                                  backgroundColor: getAvatarColor(task.assignedTo || 'Unassigned'),
                                   color: '#e2e8f0',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -659,7 +664,6 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
                         </td>
                       </tr>
                     ))}
-
                 </React.Fragment>
               );
             })}
