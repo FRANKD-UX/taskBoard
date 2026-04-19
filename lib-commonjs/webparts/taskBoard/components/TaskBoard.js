@@ -324,12 +324,12 @@ var TaskBoard = function (_a) {
     // Save — handles both create and update via TaskModal's onSave prop
     // ---------------------------------------------------------------------------
     var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var isNew, finalAssigneeId, finalAssigneeName, resolved, message, normaliseDate, payload, created, persisted_1, updated_1, error_3;
+        var isNew, finalAssigneeId, finalAssigneeName, resolved, message, normaliseDate, payload, created, returnedId, refreshed, persisted_1, updated_1, error_3;
         var _a;
         return tslib_1.__generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
-                    _b.trys.push([0, 7, , 8]);
+                    _b.trys.push([0, 9, , 10]);
                     isNew = task.id.startsWith(TEMP_ID_PREFIX);
                     finalAssigneeId = (_a = task.assignedToId) !== null && _a !== void 0 ? _a : null;
                     finalAssigneeName = task.assignedTo || '';
@@ -347,7 +347,7 @@ var TaskBoard = function (_a) {
                             console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
                                 email: task.assignedToEmail,
                                 loginName: task.assignedToLoginName,
-                                name: task.assignedTo
+                                name: task.assignedTo,
                             });
                             throw new Error(message);
                         }
@@ -373,32 +373,60 @@ var TaskBoard = function (_a) {
                         requestType: task.requestType || 'Task',
                         department: task.department || 'IT',
                     };
-                    if (!isNew) return [3 /*break*/, 4];
+                    if (!isNew) return [3 /*break*/, 6];
                     return [4 /*yield*/, taskService.createTask(payload)];
                 case 3:
                     created = _b.sent();
-                    if (!(created === null || created === void 0 ? void 0 : created.id)) {
-                        console.error('TaskBoard: createTask returned no id', created);
-                        return [2 /*return*/, null];
-                    }
-                    persisted_1 = tslib_1.__assign(tslib_1.__assign({}, task), { id: created.id.toString(), assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, createdBy: currentUserName });
+                    returnedId = (created === null || created === void 0 ? void 0 : created.id) != null
+                        ? created.id.toString()
+                        : undefined;
+                    if (!!returnedId) return [3 /*break*/, 5];
+                    // Save succeeded but ID extraction failed — log it and
+                    // reload tasks so the board reflects the new item correctly.
+                    console.warn('TaskBoard: createTask response did not include an ID — ' +
+                        'item was saved successfully. Reloading task list.', created);
+                    return [4 /*yield*/, taskService.getTasks()];
+                case 4:
+                    refreshed = _b.sent();
+                    setTasks(refreshed.map(function (t) { return ({
+                        id: t.id.toString(),
+                        title: t.title,
+                        status: toTaskStatus(t.status),
+                        priority: t.priority,
+                        assignedTo: t.assignedTo,
+                        assignedToId: t.assignedToId,
+                        assignedToEmail: t.assignedToEmail,
+                        assignedToLoginName: t.assignedToLoginName,
+                        startDate: t.startDate,
+                        dueDate: t.dueDate,
+                        createdAt: new Date().toISOString(),
+                        requestType: t.requestType,
+                        department: t.department,
+                        description: t.description,
+                        createdBy: currentUserName,
+                    }); }));
+                    // Return a synthetic task so TaskModal knows the save succeeded
+                    // and can close. The real item is now in the refreshed list above.
+                    return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, task), { id: "recovered_".concat(Date.now()) })];
+                case 5:
+                    persisted_1 = tslib_1.__assign(tslib_1.__assign({}, task), { id: returnedId, assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, createdBy: currentUserName });
                     setTasks(function (prev) { return tslib_1.__spreadArray(tslib_1.__spreadArray([], prev, true), [persisted_1], false); });
                     return [2 /*return*/, persisted_1];
-                case 4: return [4 /*yield*/, taskService.updateTask(Number(task.id), payload)];
-                case 5:
+                case 6: return [4 /*yield*/, taskService.updateTask(Number(task.id), payload)];
+                case 7:
                     _b.sent();
                     updated_1 = tslib_1.__assign(tslib_1.__assign({}, task), { assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate });
                     setTasks(function (prev) { return prev.map(function (t) { return (t.id === task.id ? updated_1 : t); }); });
                     return [2 /*return*/, updated_1];
-                case 6: return [3 /*break*/, 8];
-                case 7:
+                case 8: return [3 /*break*/, 10];
+                case 9:
                     error_3 = _b.sent();
                     console.error('TaskBoard: saveTask failed', error_3);
                     if (error_3 instanceof Error) {
                         throw error_3;
                     }
                     throw new Error('Could not save task to SharePoint.');
-                case 8: return [2 /*return*/];
+                case 10: return [2 /*return*/];
             }
         });
     }); };

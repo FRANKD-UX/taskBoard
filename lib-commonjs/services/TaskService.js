@@ -92,15 +92,15 @@ var TaskService = /** @class */ (function () {
     };
     TaskService.prototype.createTask = function (task) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, listTitle, payload, assigneeField, result, createdId;
-            var _a, _b, _c, _d, _e, _f, _g, _h, _j;
-            return tslib_1.__generator(this, function (_k) {
-                switch (_k.label) {
+            var sp, listTitle, payload, assigneeField, result, raw, createdId;
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+            return tslib_1.__generator(this, function (_q) {
+                switch (_q.label) {
                     case 0:
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, this.getTaskListTitle()];
                     case 1:
-                        listTitle = _k.sent();
+                        listTitle = _q.sent();
                         payload = {
                             Title: task.title,
                             Status: task.status,
@@ -113,15 +113,16 @@ var TaskService = /** @class */ (function () {
                         };
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
                     case 2:
-                        assigneeField = _k.sent();
+                        assigneeField = _q.sent();
                         this.applyAssigneeToPayload(payload, task.assignedToId, assigneeField);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
                                 .items.add(payload)];
                     case 3:
-                        result = _k.sent();
-                        createdId = (_h = (_f = (_d = (_b = (_a = result === null || result === void 0 ? void 0 : result.data) === null || _a === void 0 ? void 0 : _a.Id) !== null && _b !== void 0 ? _b : (_c = result === null || result === void 0 ? void 0 : result.data) === null || _c === void 0 ? void 0 : _c.ID) !== null && _d !== void 0 ? _d : (_e = result === null || result === void 0 ? void 0 : result.data) === null || _e === void 0 ? void 0 : _e.id) !== null && _f !== void 0 ? _f : (_g = result === null || result === void 0 ? void 0 : result.item) === null || _g === void 0 ? void 0 : _g.Id) !== null && _h !== void 0 ? _h : (_j = result === null || result === void 0 ? void 0 : result.item) === null || _j === void 0 ? void 0 : _j.ID;
-                        return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, result.data), { id: createdId })];
+                        result = _q.sent();
+                        raw = result;
+                        createdId = (_o = (_l = (_j = (_h = (_g = (_f = (_d = (_b = (_a = raw === null || raw === void 0 ? void 0 : raw.data) === null || _a === void 0 ? void 0 : _a.Id) !== null && _b !== void 0 ? _b : (_c = raw === null || raw === void 0 ? void 0 : raw.data) === null || _c === void 0 ? void 0 : _c.ID) !== null && _d !== void 0 ? _d : (_e = raw === null || raw === void 0 ? void 0 : raw.data) === null || _e === void 0 ? void 0 : _e.id) !== null && _f !== void 0 ? _f : raw === null || raw === void 0 ? void 0 : raw.Id) !== null && _g !== void 0 ? _g : raw === null || raw === void 0 ? void 0 : raw.ID) !== null && _h !== void 0 ? _h : raw === null || raw === void 0 ? void 0 : raw.id) !== null && _j !== void 0 ? _j : (_k = raw === null || raw === void 0 ? void 0 : raw.item) === null || _k === void 0 ? void 0 : _k.Id) !== null && _l !== void 0 ? _l : (_m = raw === null || raw === void 0 ? void 0 : raw.item) === null || _m === void 0 ? void 0 : _m.ID) !== null && _o !== void 0 ? _o : undefined;
+                        return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, ((_p = raw === null || raw === void 0 ? void 0 : raw.data) !== null && _p !== void 0 ? _p : raw)), { id: createdId })];
                 }
             });
         });

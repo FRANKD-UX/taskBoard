@@ -151,16 +151,25 @@ export class TaskService {
             .getByTitle(listTitle)
             .items.add(payload);
 
-        const createdId =
-            result?.data?.Id ??
-            result?.data?.ID ??
-            result?.data?.id ??
-            result?.item?.Id ??
-            result?.item?.ID;
+        // PnP v2 returns { data: { Id, ... }, item }
+        // PnP v3 returns { data: { Id, ID, id, ... } } depending on SP version
+        // We cast to any and walk every known key to be safe.
+        const raw = result as any;
+
+        const createdId: number | undefined =
+            raw?.data?.Id ??
+            raw?.data?.ID ??
+            raw?.data?.id ??
+            raw?.Id ??
+            raw?.ID ??
+            raw?.id ??
+            raw?.item?.Id ??
+            raw?.item?.ID ??
+            undefined;
 
         return {
-            ...result.data,
-            id: createdId
+            ...(raw?.data ?? raw),
+            id: createdId,
         };
     }
 

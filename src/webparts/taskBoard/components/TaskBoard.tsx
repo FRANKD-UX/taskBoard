@@ -299,94 +299,135 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
   const handleSaveTask = async (task: Task): Promise<Task | null> => {
     try {
-      const isNew = task.id.startsWith(TEMP_ID_PREFIX);
+        const isNew = task.id.startsWith(TEMP_ID_PREFIX);
 
-      // Resolve assignee SP user ID from email / loginName if not already known
-      let finalAssigneeId: number | null = task.assignedToId ?? null;
-      let finalAssigneeName = task.assignedTo || '';
+        // Resolve the SharePoint user ID from email or loginName when not already known.
+        let finalAssigneeId: number | null = task.assignedToId ?? null;
+        let finalAssigneeName = task.assignedTo || '';
 
-      if ((!finalAssigneeId || finalAssigneeId <= 0) && (task.assignedToEmail || task.assignedToLoginName)) {
-        const resolved = await resolveSharePointUserId(
-          task.assignedToEmail || '',
-          task.assignedToLoginName || ''
-        );
-        if (resolved) finalAssigneeId = resolved;
-      }
-
-      if (!finalAssigneeId || finalAssigneeId <= 0) {
-        if (task.assignedToEmail || task.assignedToLoginName || task.assignedTo) {
-          const message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
-          console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
-            email: task.assignedToEmail,
-            loginName: task.assignedToLoginName,
-            name: task.assignedTo
-          });
-          throw new Error(message);
-        }
-        finalAssigneeId = null;
-        finalAssigneeName = '';
-      }
-
-      const normaliseDate = (value?: string): string => {
-        if (!value) return '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-        const parsed = new Date(value);
-        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
-      };
-
-      const payload = {
-        title: task.title,
-        status: task.status,
-        priority: task.priority,
-        assignedToId: finalAssigneeId,
-        startDate: normaliseDate(task.startDate) || getTodayIso(),
-        dueDate: normaliseDate(task.dueDate),
-        description: task.description || '',
-        requestType: task.requestType || 'Task',
-        department: task.department || 'IT',
-      };
-
-      if (isNew) {
-        const created = await taskService.createTask(payload);
-        if (!created?.id) {
-          console.error('TaskBoard: createTask returned no id', created);
-          return null;
+        if ((!finalAssigneeId || finalAssigneeId <= 0) && (task.assignedToEmail || task.assignedToLoginName)) {
+            const resolved = await resolveSharePointUserId(
+                task.assignedToEmail || '',
+                task.assignedToLoginName || ''
+            );
+            if (resolved) finalAssigneeId = resolved;
         }
 
-        const persisted: Task = {
-          ...task,
-          id: created.id.toString(),
-          assignedTo: finalAssigneeName,
-          assignedToId: finalAssigneeId ?? undefined,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
-          createdBy: currentUserName,
+        if (!finalAssigneeId || finalAssigneeId <= 0) {
+            if (task.assignedToEmail || task.assignedToLoginName || task.assignedTo) {
+                const message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
+                console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
+                    email: task.assignedToEmail,
+                    loginName: task.assignedToLoginName,
+                    name: task.assignedTo,
+                });
+                throw new Error(message);
+            }
+            finalAssigneeId = null;
+            finalAssigneeName = '';
+        }
+
+        const normaliseDate = (value?: string): string => {
+            if (!value) return '';
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+            const parsed = new Date(value);
+            return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
         };
 
-        setTasks((prev) => [...prev, persisted]);
-        return persisted;
-      } else {
-        await taskService.updateTask(Number(task.id), payload);
-
-        const updated: Task = {
-          ...task,
-          assignedTo: finalAssigneeName,
-          assignedToId: finalAssigneeId ?? undefined,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
+        const payload = {
+            title: task.title,
+            status: task.status,
+            priority: task.priority,
+            assignedToId: finalAssigneeId,
+            startDate: normaliseDate(task.startDate) || getTodayIso(),
+            dueDate: normaliseDate(task.dueDate),
+            description: task.description || '',
+            requestType: task.requestType || 'Task',
+            department: task.department || 'IT',
         };
 
-        setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
-        return updated;
-      }
+        if (isNew) {
+            const created = await taskService.createTask(payload);
+
+            // The item definitely saved — if the ID came back undefined it is a
+            // PnP response-shape mismatch, not a save failure. We build the local
+            // task object with whatever ID we have; if it is still missing we
+            // re-fetch the list so the UI gets a real ID on the next render.
+            const returnedId: string | undefined = created?.id != null
+                ? created.id.toString()
+                : undefined;
+
+            if (!returnedId) {
+                // Save succeeded but ID extraction failed — log it and
+                // reload tasks so the board reflects the new item correctly.
+                console.warn(
+                    'TaskBoard: createTask response did not include an ID — ' +
+                    'item was saved successfully. Reloading task list.',
+                    created
+                );
+
+                const refreshed = await taskService.getTasks();
+                setTasks(
+                    refreshed.map((t: any) => ({
+                        id: t.id.toString(),
+                        title: t.title,
+                        status: toTaskStatus(t.status),
+                        priority: t.priority,
+                        assignedTo: t.assignedTo,
+                        assignedToId: t.assignedToId,
+                        assignedToEmail: t.assignedToEmail,
+                        assignedToLoginName: t.assignedToLoginName,
+                        startDate: t.startDate,
+                        dueDate: t.dueDate,
+                        createdAt: new Date().toISOString(),
+                        requestType: t.requestType,
+                        department: t.department,
+                        description: t.description,
+                        createdBy: currentUserName,
+                    }))
+                );
+
+                // Return a synthetic task so TaskModal knows the save succeeded
+                // and can close. The real item is now in the refreshed list above.
+                return { ...task, id: `recovered_${Date.now()}` };
+            }
+
+            const persisted: Task = {
+                ...task,
+                id: returnedId,
+                assignedTo: finalAssigneeName,
+                assignedToId: finalAssigneeId ?? undefined,
+                startDate: payload.startDate,
+                dueDate: payload.dueDate,
+                createdBy: currentUserName,
+            };
+
+            setTasks((prev) => [...prev, persisted]);
+            return persisted;
+
+        } else {
+            await taskService.updateTask(Number(task.id), payload);
+
+            const updated: Task = {
+                ...task,
+                assignedTo: finalAssigneeName,
+                assignedToId: finalAssigneeId ?? undefined,
+                startDate: payload.startDate,
+                dueDate: payload.dueDate,
+            };
+
+            setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+            return updated;
+        }
+
     } catch (error) {
-      console.error('TaskBoard: saveTask failed', error);
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error('Could not save task to SharePoint.');
+        console.error('TaskBoard: saveTask failed', error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error('Could not save task to SharePoint.');
     }
-  };
+};
 
   // ---------------------------------------------------------------------------
   // Delete
