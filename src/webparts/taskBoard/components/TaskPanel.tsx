@@ -18,9 +18,9 @@ export interface ITaskPanelProps {
   currentUserName: string;
 }
 
-// ---------------------------------------------------------------------------
+
 // Styles
-// ---------------------------------------------------------------------------
+
 
 const panelStyle: React.CSSProperties = {
   position: 'fixed',
@@ -109,9 +109,9 @@ const dangerButtonStyle: React.CSSProperties = {
   transition: 'background-color 0.15s, opacity 0.15s',
 };
 
-// ---------------------------------------------------------------------------
+
 // Helper
-// ---------------------------------------------------------------------------
+
 
 const buildResolvedUserFromTask = (task: Task): IResolvedUser | null => {
   if (!task.assignedTo && !task.assignedToEmail) {
@@ -126,9 +126,9 @@ const buildResolvedUserFromTask = (task: Task): IResolvedUser | null => {
   };
 };
 
-// ---------------------------------------------------------------------------
+
 // Component
-// ---------------------------------------------------------------------------
+
 
 const TaskPanel: React.FC<ITaskPanelProps> = ({
   selectedTask,

@@ -1,3 +1,5 @@
+// TaskTypes.ts
+
 export type TaskStatus =
     | 'Unassigned'
     | 'Backlog'
@@ -17,8 +19,35 @@ export type TaskRequestType =
 export type TaskDepartment =
     | 'IT'
     | 'Finance'
+    | 'Support'
     | 'Operations';
 
+// The three states a collaboration request can be in.
+// Pending = waiting for the invited person to respond.
+// Accepted = they said yes — their name shows in "In Collaboration With".
+// Declined = they said no — shown in history only, not on the task card.
+export type CollaborationStatus = 'Pending' | 'Accepted' | 'Declined';
+
+// A single collaborator as resolved from SharePoint.
+export interface ICollaborator {
+    id: number | null;
+    name: string;
+    email: string;
+    loginName: string;
+}
+
+// A full collaboration request row from the TaskCollaborators SP list.
+export interface ICollaborationRequest {
+    // The SP list item ID of this request row.
+    requestId: number;
+    taskId: number;
+    taskTitle: string;
+    collaborator: ICollaborator;
+    requestedBy: ICollaborator;
+    status: CollaborationStatus;
+    requestedAt: string;
+    respondedAt?: string;
+}
 
 export interface Task {
     id: string;
@@ -33,14 +62,11 @@ export interface Task {
     /**
      * The user's email / UPN e.g. "lekau@company.com".
      * PRIMARY identity for resolving the SP user ID at save time.
-     * sp.web.siteUsers.getByEmail() is the most reliable resolution method
-     * in Azure AD-synced SharePoint Online tenants.
      */
     assignedToEmail?: string;
 
     /**
-     * Claims-format login name from ClientPeoplePicker
-     * e.g. "i:0#.f|membership|lekau@company.com".
+     * Claims-format login name from ClientPeoplePicker.
      * SECONDARY fallback when getByEmail fails.
      */
     assignedToLoginName?: string;
@@ -54,8 +80,11 @@ export interface Task {
 
     description?: string;
     createdBy?: string;
-}
 
+    // Accepted collaborators — populated from the Collaborators multi-person
+    // column on the Tasks list. Used to render "In Collaboration With".
+    collaborators?: ICollaborator[];
+}
 
 export interface ITask {
     id: number;
@@ -74,6 +103,8 @@ export interface ITask {
     requestType: string;
     department: string;
     createdBy?: string;
+
+    collaborators?: ICollaborator[];
 }
 
 export type TaskUpdate = Partial<Task>;

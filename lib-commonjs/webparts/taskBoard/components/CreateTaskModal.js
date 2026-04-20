@@ -17,7 +17,7 @@ var TASK_STATUSES = [
     'Completed',
 ];
 var REQUEST_TYPES = ['Task', 'Incident'];
-var DEPARTMENTS = ['IT', 'Finance', 'Operations'];
+var DEPARTMENTS = ['IT', 'Finance', 'Operations', 'Support'];
 var TEMP_ID_PREFIX = 'temp_';
 var getTodayIso = function () {
     var now = new Date();

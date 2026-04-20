@@ -6,9 +6,7 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
-// ---------------------------------------------------------------------------
 // Styles
-// ---------------------------------------------------------------------------
 var panelStyle = {
     position: 'fixed',
     top: 0,
@@ -88,9 +86,7 @@ var dangerButtonStyle = {
     color: 'white',
     transition: 'background-color 0.15s, opacity 0.15s',
 };
-// ---------------------------------------------------------------------------
 // Helper
-// ---------------------------------------------------------------------------
 var buildResolvedUserFromTask = function (task) {
     var _a, _b, _c, _d, _e;
     if (!task.assignedTo && !task.assignedToEmail) {
@@ -103,9 +99,7 @@ var buildResolvedUserFromTask = function (task) {
         loginName: (_e = task.assignedToLoginName) !== null && _e !== void 0 ? _e : '',
     };
 };
-// ---------------------------------------------------------------------------
 // Component
-// ---------------------------------------------------------------------------
 var TaskPanel = function (_a) {
     var _b, _c, _d, _e, _f, _g, _h, _j;
     var selectedTask = _a.selectedTask, updateTask = _a.updateTask, saveTask = _a.saveTask, deleteTask = _a.deleteTask, onClose = _a.onClose, canAssign = _a.canAssign, context = _a.context, currentUserName = _a.currentUserName;

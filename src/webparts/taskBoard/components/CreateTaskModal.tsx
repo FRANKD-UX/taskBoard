@@ -45,7 +45,7 @@ const TASK_STATUSES: TaskStatus[] = [
 ];
 
 const REQUEST_TYPES: string[] = ['Task', 'Incident'];
-const DEPARTMENTS: string[] = ['IT', 'Finance', 'Operations'];
+const DEPARTMENTS: string[] = ['IT', 'Finance', 'Operations', 'Support'];
 const TEMP_ID_PREFIX = 'temp_';
 
 const getTodayIso = (): string => {
