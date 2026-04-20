@@ -15,15 +15,15 @@ import { TaskService } from '../../../services/TaskService';
 import { getSP } from '../../../pnpjsConfig';
 import { getUserRole } from '../../../services/UserRoleService';
 
-// ---------------------------------------------------------------------------
+
 // Types
-// ---------------------------------------------------------------------------
+
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
-// ---------------------------------------------------------------------------
+
 // Constants
-// ---------------------------------------------------------------------------
+
 
 const TEMP_ID_PREFIX = 'temp_';
 
@@ -37,9 +37,9 @@ const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
   { key: 'chart',   label: 'Chart'    },
 ];
 
-// ---------------------------------------------------------------------------
+
 // Pure helpers
-// ---------------------------------------------------------------------------
+
 
 const toTaskStatus = (value?: string): TaskStatus => {
   if (value && TASK_STATUSES.indexOf(value as TaskStatus) > -1) {
@@ -147,9 +147,9 @@ const resolveSharePointUserId = async (email: string, loginName: string): Promis
   return null;
 };
 
-// ---------------------------------------------------------------------------
+
 // Component
-// ---------------------------------------------------------------------------
+
 
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -159,7 +159,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
   const [isViewVisible, setIsViewVisible] = useState<boolean>(true);
   const [hoveredTab, setHoveredTab] = useState<ViewKey | null>(null);
   const [canAssign, setCanAssign] = useState<boolean>(false);
+  const [canAssignAcrossDepartments, setCanAssignAcrossDepartments] = useState<boolean>(false);
   const [currentUserName, setCurrentUserName] = useState<string>('');
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const taskService = useMemo(() => new TaskService(), []);
@@ -171,9 +173,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     (window as any).spfxContext = context;
   }, [context]);
 
-  // ---------------------------------------------------------------------------
+ 
   // Initial data load
-  // ---------------------------------------------------------------------------
+ 
 
   useEffect(() => {
     const loadTasks = async (): Promise<void> => {
@@ -181,17 +183,19 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         setIsLoading(true);
         const sp = getSP();
 
-        const user = await sp.web.currentUser();
-        setCurrentUserName(user.Title || '');
+          const user = await sp.web.currentUser();
+          setCurrentUserName(user.Title || '');
+          setCurrentUserEmail(user.Email || '');
 
-        try {
-          const role = await getUserRole(user.Email || '');
-          setCanAssign(role?.canAssign === true);
-        } catch (roleError) {
-          // Role lookup should not block task loading.
-          console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
-          setCanAssign(false);
-        }
+          try {
+              const role = await getUserRole(user.Email || '');
+              setCanAssign(role?.canAssign === true);
+              setCanAssignAcrossDepartments(role?.canAssignAcrossDepartments === true);
+          } catch (roleError) {
+              console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
+              setCanAssign(false);
+              setCanAssignAcrossDepartments(false);
+          }
 
         const data = await taskService.getTasks();
 
@@ -224,9 +228,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     loadTasks();
   }, [taskService]);
 
-  // ---------------------------------------------------------------------------
+ 
   // View transition fade
-  // ---------------------------------------------------------------------------
+ 
 
   useEffect(() => {
     if (activeView === displayedView) return;
@@ -238,9 +242,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     return () => clearTimeout(timer);
   }, [activeView, displayedView]);
 
-  // ---------------------------------------------------------------------------
+
   // Drag and drop
-  // ---------------------------------------------------------------------------
+
 
   const handleDragEnd = async (result: DropResult): Promise<void> => {
     const { destination, draggableId } = result;
@@ -255,9 +259,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     }
   };
 
-  // ---------------------------------------------------------------------------
+
   // Modal triggers
-  // ---------------------------------------------------------------------------
+ 
 
   /**
    * Opens the modal for an EXISTING task (card click, calendar click, etc.)
@@ -270,56 +274,74 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
    * Opens the modal in NEW TASK mode.
    * We build a minimal temp Task so TaskModal gets a properly shaped object.
    */
-  const handleNewTask = (status: TaskStatus): void => {
+  // Replace the existing handleNewTask function:
+    const handleNewTask = (status: TaskStatus): void => {
     const today = getTodayIso();
     const draft: Task = {
-      id: `${TEMP_ID_PREFIX}${Date.now()}`,
-      title: '',
-      status,
-      priority: 'Medium',
-      startDate: today,
-      dueDate: undefined,
-      createdAt: new Date().toISOString(),
-      requestType: 'Task',
-      department: 'IT',
-      description: '',
-      assignedTo: '',
-      createdBy: currentUserName,
+        id: `${TEMP_ID_PREFIX}${Date.now()}`,
+        title: '',
+        status,
+        priority: 'Medium',
+        startDate: today,
+        dueDate: undefined,
+        createdAt: new Date().toISOString(),
+        requestType: 'Task',
+        department: 'IT',
+        description: '',
+        // If this user cannot assign tasks, default the assignee to themselves.
+        // Managers/Owners/TeamLeads leave it blank so they can pick anyone.
+        assignedTo: canAssign ? '' : currentUserName,
+        assignedToEmail: canAssign ? undefined : currentUserEmail,
+        createdBy: currentUserName,
     };
     setModalTask(draft);
-  };
+};
 
   const handleCloseModal = (): void => {
     setModalTask(null);
   };
 
-  // ---------------------------------------------------------------------------
+  
   // Save — handles both create and update via TaskModal's onSave prop
-  // ---------------------------------------------------------------------------
+  
 
   const handleSaveTask = async (task: Task): Promise<Task | null> => {
     try {
         const isNew = task.id.startsWith(TEMP_ID_PREFIX);
 
-        // Resolve the SharePoint user ID from email or loginName when not already known.
-        let finalAssigneeId: number | null = task.assignedToId ?? null;
-        let finalAssigneeName = task.assignedTo || '';
+        // Enforce self-assignment for users without assignment permission.
+        // This runs on both create and update so the rule is airtight.
+        const effectiveTask: Task = !canAssign
+            ? {
+                  ...task,
+                  assignedTo: currentUserName,
+                  assignedToEmail: currentUserEmail,
+                  assignedToId: undefined,
+                  assignedToLoginName: undefined,
+              }
+            : task;
 
-        if ((!finalAssigneeId || finalAssigneeId <= 0) && (task.assignedToEmail || task.assignedToLoginName)) {
+        let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
+        let finalAssigneeName = effectiveTask.assignedTo || '';
+
+        if (
+            (!finalAssigneeId || finalAssigneeId <= 0) &&
+            (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName)
+        ) {
             const resolved = await resolveSharePointUserId(
-                task.assignedToEmail || '',
-                task.assignedToLoginName || ''
+                effectiveTask.assignedToEmail || '',
+                effectiveTask.assignedToLoginName || ''
             );
             if (resolved) finalAssigneeId = resolved;
         }
 
         if (!finalAssigneeId || finalAssigneeId <= 0) {
-            if (task.assignedToEmail || task.assignedToLoginName || task.assignedTo) {
+            if (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName || effectiveTask.assignedTo) {
                 const message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
                 console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
-                    email: task.assignedToEmail,
-                    loginName: task.assignedToLoginName,
-                    name: task.assignedTo,
+                    email: effectiveTask.assignedToEmail,
+                    loginName: effectiveTask.assignedToLoginName,
+                    name: effectiveTask.assignedTo,
                 });
                 throw new Error(message);
             }
@@ -335,31 +357,25 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
 
         const payload = {
-            title: task.title,
-            status: task.status,
-            priority: task.priority,
+            title: effectiveTask.title,
+            status: effectiveTask.status,
+            priority: effectiveTask.priority,
             assignedToId: finalAssigneeId,
-            startDate: normaliseDate(task.startDate) || getTodayIso(),
-            dueDate: normaliseDate(task.dueDate),
-            description: task.description || '',
-            requestType: task.requestType || 'Task',
-            department: task.department || 'IT',
+            startDate: normaliseDate(effectiveTask.startDate) || getTodayIso(),
+            dueDate: normaliseDate(effectiveTask.dueDate),
+            description: effectiveTask.description || '',
+            requestType: effectiveTask.requestType || 'Task',
+            department: effectiveTask.department || 'IT',
         };
 
         if (isNew) {
             const created = await taskService.createTask(payload);
 
-            // The item definitely saved — if the ID came back undefined it is a
-            // PnP response-shape mismatch, not a save failure. We build the local
-            // task object with whatever ID we have; if it is still missing we
-            // re-fetch the list so the UI gets a real ID on the next render.
             const returnedId: string | undefined = created?.id != null
                 ? created.id.toString()
                 : undefined;
 
             if (!returnedId) {
-                // Save succeeded but ID extraction failed — log it and
-                // reload tasks so the board reflects the new item correctly.
                 console.warn(
                     'TaskBoard: createTask response did not include an ID — ' +
                     'item was saved successfully. Reloading task list.',
@@ -387,13 +403,11 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     }))
                 );
 
-                // Return a synthetic task so TaskModal knows the save succeeded
-                // and can close. The real item is now in the refreshed list above.
-                return { ...task, id: `recovered_${Date.now()}` };
+                return { ...effectiveTask, id: `recovered_${Date.now()}` };
             }
 
             const persisted: Task = {
-                ...task,
+                ...effectiveTask,
                 id: returnedId,
                 assignedTo: finalAssigneeName,
                 assignedToId: finalAssigneeId ?? undefined,
@@ -406,17 +420,17 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             return persisted;
 
         } else {
-            await taskService.updateTask(Number(task.id), payload);
+            await taskService.updateTask(Number(effectiveTask.id), payload);
 
             const updated: Task = {
-                ...task,
+                ...effectiveTask,
                 assignedTo: finalAssigneeName,
                 assignedToId: finalAssigneeId ?? undefined,
                 startDate: payload.startDate,
                 dueDate: payload.dueDate,
             };
 
-            setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+            setTasks((prev) => prev.map((t) => (t.id === effectiveTask.id ? updated : t)));
             return updated;
         }
 
@@ -429,9 +443,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     }
 };
 
-  // ---------------------------------------------------------------------------
+
   // Delete
-  // ---------------------------------------------------------------------------
+ 
 
   const handleDeleteTask = async (id: string): Promise<void> => {
     try {
@@ -444,9 +458,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     }
   };
 
-  // ---------------------------------------------------------------------------
+
   // TableView still uses the old per-field updateTask signature — keep it
-  // ---------------------------------------------------------------------------
+ 
 
   const handleUpdateTask = (id: string, updates: Partial<Task>): void => {
     if (!canAssign && updates.assignedTo !== undefined) {
@@ -456,9 +470,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
   };
 
-  // ---------------------------------------------------------------------------
   // Render helpers
-  // ---------------------------------------------------------------------------
+
 
   const renderActiveView = (view: ViewKey): React.ReactElement => {
     if (isLoading) {
@@ -517,9 +530,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     }
   };
 
-  // ---------------------------------------------------------------------------
+ 
   // Render
-  // ---------------------------------------------------------------------------
+ 
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>

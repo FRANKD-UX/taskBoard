@@ -12,10 +12,25 @@ require("@pnp/sp/site-users");
 require("@pnp/sp/site-users/web");
 var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var theme_1 = require("./theme");
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+var DEBOUNCE_MS = 300;
+var MIN_SEARCH_CHARS = 2;
+var AVATAR_PALETTE = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
+// ---------------------------------------------------------------------------
+// Module-level fallback flags
+// These flip to true the first time a source fails so we stop hammering it.
+// ---------------------------------------------------------------------------
+var directoryEndpointDisabled = false;
+var restSiteUsersDisabled = false;
+var graphSearchDisabled = false;
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
 var extractEmailFromLoginName = function (loginName) {
-    if (!loginName) {
+    if (!loginName)
         return '';
-    }
     var lowered = loginName.toLowerCase();
     if (lowered.indexOf('|') > -1) {
         var parts = loginName.split('|');
@@ -23,11 +38,6 @@ var extractEmailFromLoginName = function (loginName) {
     }
     return loginName.indexOf('@') > -1 ? loginName.trim() : '';
 };
-var DEBOUNCE_MS = 300;
-var MIN_SEARCH_CHARS = 2;
-var disableDirectoryEndpointSearch = false;
-var disableRestSiteUsersSearch = false;
-var AVATAR_PALETTE = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 var getInitials = function (name) {
     if (!name || name === 'Unassigned')
         return '?';
@@ -52,58 +62,137 @@ var getSpfxContext = function () {
 };
 var getWebUrlForPicker = function (siteUrl) {
     var _a, _b;
-    if (siteUrl === null || siteUrl === void 0 ? void 0 : siteUrl.trim()) {
+    if (siteUrl === null || siteUrl === void 0 ? void 0 : siteUrl.trim())
         return siteUrl.trim();
-    }
     return (_b = (_a = getSpfxContext()) === null || _a === void 0 ? void 0 : _a.pageContext.web.absoluteUrl) !== null && _b !== void 0 ? _b : '';
 };
 var mergeUniqueUsers = function (users) {
     var merged = new Map();
     users.forEach(function (user) {
-        var key = (user.loginName || user.email || user.name).trim().toLowerCase();
+        // Use email as the canonical dedup key — it is stable across all sources.
+        // Fall back to loginName then name when email is absent.
+        var key = (user.email || user.loginName || user.name).trim().toLowerCase();
         if (!key)
             return;
         var existing = merged.get(key);
+        // Prefer the entry that already has a resolved SP ID.
         if (!existing || (existing.id == null && user.id != null)) {
             merged.set(key, user);
         }
     });
     return Array.from(merged.values());
 };
+// ---------------------------------------------------------------------------
+// Source 1 — Microsoft Graph /users  (searches the ENTIRE Azure AD tenant)
+//
+// This is the most reliable way to search the full organisation.
+// Graph is available in SPFx via AadHttpClient configured for
+// "https://graph.microsoft.com".  The $search query parameter with
+// displayName or mail lets us find anyone in the tenant regardless of
+// whether they have ever visited the SharePoint site.
+// ---------------------------------------------------------------------------
+var searchGraphUsers = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var context, client, encodedQuery, url, response, payload, users, _a;
+    var _b;
+    return tslib_1.__generator(this, function (_c) {
+        switch (_c.label) {
+            case 0:
+                if (graphSearchDisabled)
+                    return [2 /*return*/, []];
+                context = getSpfxContext();
+                if (!context)
+                    return [2 /*return*/, []];
+                _c.label = 1;
+            case 1:
+                _c.trys.push([1, 5, , 6]);
+                return [4 /*yield*/, context.aadHttpClientFactory.getClient('https://graph.microsoft.com')];
+            case 2:
+                client = _c.sent();
+                encodedQuery = encodeURIComponent(query);
+                url = "https://graph.microsoft.com/v1.0/users" +
+                    "?$search=\"displayName:".concat(encodedQuery, "\" OR \"mail:").concat(encodedQuery, "\" OR \"userPrincipalName:").concat(encodedQuery, "\"") +
+                    "&$select=id,displayName,mail,userPrincipalName" +
+                    "&$top=10";
+                return [4 /*yield*/, client.get(url, sp_http_1.AadHttpClient.configurations.v1, {
+                        headers: {
+                            ConsistencyLevel: 'eventual',
+                        },
+                    })];
+            case 3:
+                response = _c.sent();
+                if (!response.ok) {
+                    // 403 means the app registration does not have User.Read.All — fall back gracefully.
+                    if (response.status === 403 || response.status === 401) {
+                        graphSearchDisabled = true;
+                    }
+                    return [2 /*return*/, []];
+                }
+                return [4 /*yield*/, response.json()];
+            case 4:
+                payload = (_c.sent());
+                users = (_b = payload.value) !== null && _b !== void 0 ? _b : [];
+                return [2 /*return*/, users
+                        .filter(function (u) { return u.displayName || u.mail || u.userPrincipalName; })
+                        .map(function (u) {
+                        var email = (u.mail || u.userPrincipalName || '').trim();
+                        var name = (u.displayName || email).trim();
+                        var loginName = email ? "i:0#.f|membership|".concat(email) : '';
+                        return {
+                            id: null, // Graph object ID is not the SP user ID; we resolve on select.
+                            name: name,
+                            email: email,
+                            loginName: loginName,
+                        };
+                    })];
+            case 5:
+                _a = _c.sent();
+                // Network or auth error — disable for the rest of the session.
+                graphSearchDisabled = true;
+                return [2 /*return*/, []];
+            case 6: return [2 /*return*/];
+        }
+    });
+}); };
+// ---------------------------------------------------------------------------
+// Source 2 — SharePoint ClientPeoplePicker  (searches AD via SP middleware)
+//
+// Key parameters explained for the junior:
+//   PrincipalSource: 4  = Active Directory only (NOT site membership list).
+//                         This is what makes it search the whole tenant
+//                         instead of just site members.
+//                         Old value was 15 (all sources) which in practice
+//                         prioritises site membership and truncates AD results.
+//   PrincipalType: 1    = Users only (no groups, no DLs).
+//   SharePointGroupID: 0 = Do not restrict to any SP group — search the whole tenant.
+//   MaximumEntitySuggestions: 15 — slightly more headroom before Graph kicks in.
+// ---------------------------------------------------------------------------
 var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var context, webUrl, endpoint, baseQueryParams, payloadCandidates, parsed, sawBadRequest, _i, payloadCandidates_1, requestBody, response, payload, rawResults, _a;
+    var context, webUrl, endpoint, queryParams, payloadCandidates, parsed, sawBadRequest, _i, payloadCandidates_1, requestBody, response, payload, rawResults, _a;
     var _b, _c, _d;
     return tslib_1.__generator(this, function (_e) {
         switch (_e.label) {
             case 0:
-                if (disableDirectoryEndpointSearch) {
+                if (directoryEndpointDisabled)
                     return [2 /*return*/, []];
-                }
                 context = getSpfxContext();
                 webUrl = getWebUrlForPicker(siteUrl);
-                if (!context || !webUrl) {
+                if (!context || !webUrl)
                     return [2 /*return*/, []];
-                }
                 endpoint = "".concat(webUrl, "/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser");
-                baseQueryParams = {
+                queryParams = {
+                    __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
                     QueryString: query,
                     AllowEmailAddresses: true,
                     AllowMultipleEntities: false,
-                    AllUrlZones: true,
-                    MaximumEntitySuggestions: 10,
-                    PrincipalSource: 15,
-                    PrincipalType: 1
+                    AllUrlZones: false,
+                    MaximumEntitySuggestions: 15,
+                    PrincipalSource: 4,
+                    PrincipalType: 1,
+                    SharePointGroupID: 0,
                 };
                 payloadCandidates = [
-                    {
-                        queryParams: tslib_1.__assign({ __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' } }, baseQueryParams)
-                    },
-                    {
-                        queryParams: JSON.stringify(tslib_1.__assign({ __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' } }, baseQueryParams))
-                    },
-                    {
-                        queryParams: JSON.stringify(baseQueryParams)
-                    }
+                    { queryParams: queryParams },
+                    { queryParams: JSON.stringify(queryParams) },
                 ];
                 parsed = [];
                 sawBadRequest = false;
@@ -119,16 +208,15 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                         headers: {
                             accept: 'application/json;odata=nometadata',
                             'content-type': 'application/json;odata=verbose',
-                            'odata-version': ''
+                            'odata-version': '',
                         },
-                        body: JSON.stringify(requestBody)
+                        body: JSON.stringify(requestBody),
                     })];
             case 3:
                 response = _e.sent();
                 if (!response.ok) {
-                    if (response.status === 400 || response.status === 406) {
+                    if (response.status === 400 || response.status === 406)
                         sawBadRequest = true;
-                    }
                     return [3 /*break*/, 6];
                 }
                 return [4 /*yield*/, response.json()];
@@ -137,11 +225,10 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                 rawResults = (_d = (_b = payload.value) !== null && _b !== void 0 ? _b : (_c = payload.d) === null || _c === void 0 ? void 0 : _c.ClientPeoplePickerSearchUser) !== null && _d !== void 0 ? _d : '[]';
                 parsed =
                     typeof rawResults === 'string'
-                        ? (JSON.parse(rawResults) || [])
-                        : (rawResults || []);
-                if (parsed.length > 0) {
+                        ? JSON.parse(rawResults) || []
+                        : rawResults || [];
+                if (parsed.length > 0)
                     return [3 /*break*/, 7];
-                }
                 return [3 /*break*/, 6];
             case 5:
                 _a = _e.sent();
@@ -151,13 +238,16 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                 return [3 /*break*/, 1];
             case 7:
                 if (parsed.length === 0 && sawBadRequest) {
-                    disableDirectoryEndpointSearch = true;
+                    directoryEndpointDisabled = true;
                 }
                 return [2 /*return*/, parsed
                         .filter(function (entry) { return !entry.EntityType || entry.EntityType.toLowerCase() === 'user'; })
                         .map(function (entry) {
                         var _a, _b, _c, _d;
-                        var loginName = (entry.Key || ((_a = entry.EntityData) === null || _a === void 0 ? void 0 : _a.PrincipalName) || ((_b = entry.EntityData) === null || _b === void 0 ? void 0 : _b.AccountName) || '').trim();
+                        var loginName = (entry.Key ||
+                            ((_a = entry.EntityData) === null || _a === void 0 ? void 0 : _a.PrincipalName) ||
+                            ((_b = entry.EntityData) === null || _b === void 0 ? void 0 : _b.AccountName) ||
+                            '').trim();
                         var email = (((_c = entry.EntityData) === null || _c === void 0 ? void 0 : _c.Email) || extractEmailFromLoginName(loginName) || '').trim();
                         var name = (entry.DisplayText || email || loginName).trim();
                         var spUserIdRaw = (_d = entry.EntityData) === null || _d === void 0 ? void 0 : _d.SPUserID;
@@ -166,13 +256,20 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                             id: Number.isFinite(spUserId) && spUserId > 0 ? spUserId : null,
                             name: name,
                             email: email,
-                            loginName: loginName
+                            loginName: loginName,
                         };
                     })
-                        .filter(function (user) { return user.name.length > 0 || user.email.length > 0 || user.loginName.length > 0; })];
+                        .filter(function (u) { return u.name.length > 0 || u.email.length > 0 || u.loginName.length > 0; })];
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// Source 3 — SP site users list  (fast, but only people who visited the site)
+//
+// We keep this as a supplementary source because it returns real SP IDs
+// immediately without a second resolve step.  Results from here that are
+// already in Graph/Directory results get deduped away.
+// ---------------------------------------------------------------------------
 var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, trimmed, normalizedQuery, results, exact, _a, users, _b;
     return tslib_1.__generator(this, function (_c) {
@@ -194,7 +291,7 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
                         id: exact.Id,
                         name: exact.Title || exact.Email || exact.LoginName || trimmed,
                         email: exact.Email || trimmed,
-                        loginName: exact.LoginName || ''
+                        loginName: exact.LoginName || '',
                     });
                 }
                 return [3 /*break*/, 4];
@@ -222,7 +319,7 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
                         id: (_a = user.Id) !== null && _a !== void 0 ? _a : null,
                         name: user.Title || user.Email || user.LoginName || '',
                         email: user.Email || extractEmailFromLoginName(user.LoginName || ''),
-                        loginName: user.LoginName || ''
+                        loginName: user.LoginName || '',
                     });
                 });
                 return [3 /*break*/, 7];
@@ -233,34 +330,30 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// Source 4 — SP REST siteusers  (REST-flavoured version of source 3)
+// ---------------------------------------------------------------------------
 var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var context, webUrl, response, payload, users, normalizedQuery_1, _a;
     var _b, _c, _d;
     return tslib_1.__generator(this, function (_e) {
         switch (_e.label) {
             case 0:
-                if (disableRestSiteUsersSearch) {
+                if (restSiteUsersDisabled)
                     return [2 /*return*/, []];
-                }
                 context = getSpfxContext();
                 webUrl = getWebUrlForPicker(siteUrl);
-                if (!context || !webUrl) {
+                if (!context || !webUrl)
                     return [2 /*return*/, []];
-                }
                 _e.label = 1;
             case 1:
                 _e.trys.push([1, 4, , 5]);
-                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, {
-                        headers: {
-                            accept: 'application/json;odata=verbose'
-                        }
-                    })];
+                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, { headers: { accept: 'application/json;odata=verbose' } })];
             case 2:
                 response = _e.sent();
                 if (!response.ok) {
-                    if (response.status === 406 || response.status === 400) {
-                        disableRestSiteUsersSearch = true;
-                    }
+                    if (response.status === 406 || response.status === 400)
+                        restSiteUsersDisabled = true;
                     return [2 /*return*/, []];
                 }
                 return [4 /*yield*/, response.json()];
@@ -273,7 +366,9 @@ var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaite
                         var title = String(user.Title || '').toLowerCase();
                         var email = String(user.Email || user.EMail || '').toLowerCase();
                         var loginName = String(user.LoginName || '').toLowerCase();
-                        return title.indexOf(normalizedQuery_1) > -1 || email.indexOf(normalizedQuery_1) > -1 || loginName.indexOf(normalizedQuery_1) > -1;
+                        return (title.indexOf(normalizedQuery_1) > -1 ||
+                            email.indexOf(normalizedQuery_1) > -1 ||
+                            loginName.indexOf(normalizedQuery_1) > -1);
                     })
                         .slice(0, 10)
                         .map(function (user) {
@@ -282,17 +377,20 @@ var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaite
                             id: (_a = user.Id) !== null && _a !== void 0 ? _a : null,
                             name: user.Title || user.Email || user.EMail || user.LoginName || '',
                             email: user.Email || user.EMail || extractEmailFromLoginName(user.LoginName || ''),
-                            loginName: user.LoginName || ''
+                            loginName: user.LoginName || '',
                         });
                     })];
             case 4:
                 _a = _e.sent();
-                disableRestSiteUsersSearch = true;
+                restSiteUsersDisabled = true;
                 return [2 /*return*/, []];
             case 5: return [2 /*return*/];
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// Source 5 — UserRoles list  (your application's own user registry)
+// ---------------------------------------------------------------------------
 var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, normalizedQuery, items, _a;
     return tslib_1.__generator(this, function (_b) {
@@ -319,7 +417,7 @@ var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 
                             id: (_a = user === null || user === void 0 ? void 0 : user.Id) !== null && _a !== void 0 ? _a : null,
                             name: (user === null || user === void 0 ? void 0 : user.Title) || '',
                             email: (user === null || user === void 0 ? void 0 : user.EMail) || '',
-                            loginName: (user === null || user === void 0 ? void 0 : user.LoginName) || ''
+                            loginName: (user === null || user === void 0 ? void 0 : user.LoginName) || '',
                         };
                     })
                         .filter(function (user) {
@@ -338,27 +436,39 @@ var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// Master search — runs all sources in parallel and deduplicates results.
+//
+// Priority order after dedup:
+//   Graph results come first (full org, most complete).
+//   ClientPeoplePicker results second (full AD via SP middleware).
+//   Site users third (already-resolved SP IDs are valuable for the save step).
+//   UserRoles last (your app's own subset).
+//
+// mergeUniqueUsers keeps the first occurrence of each email, so Graph
+// results win when there is a collision.
+// ---------------------------------------------------------------------------
 var searchUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var trimmed, _a, siteUsers, roleUsers, restSiteUsers, directoryUsers, merged, error_1;
+    var trimmed, _a, graphUsers, directoryUsers, siteUsers, restSiteUsers, roleUsers, merged, error_1;
     return tslib_1.__generator(this, function (_b) {
         switch (_b.label) {
             case 0:
                 trimmed = query.trim();
-                if (!trimmed || trimmed.length < MIN_SEARCH_CHARS) {
+                if (!trimmed || trimmed.length < MIN_SEARCH_CHARS)
                     return [2 /*return*/, []];
-                }
                 _b.label = 1;
             case 1:
                 _b.trys.push([1, 3, , 4]);
                 return [4 /*yield*/, Promise.all([
-                        searchSiteUsers(trimmed).catch(function () { return []; }),
-                        searchUsersFromUserRoles(trimmed).catch(function () { return []; }),
-                        searchSiteUsersViaRest(trimmed, siteUrl).catch(function () { return []; }),
+                        searchGraphUsers(trimmed).catch(function () { return []; }),
                         searchDirectoryUsers(trimmed, siteUrl).catch(function () { return []; }),
+                        searchSiteUsers(trimmed).catch(function () { return []; }),
+                        searchSiteUsersViaRest(trimmed, siteUrl).catch(function () { return []; }),
+                        searchUsersFromUserRoles(trimmed).catch(function () { return []; }),
                     ])];
             case 2:
-                _a = _b.sent(), siteUsers = _a[0], roleUsers = _a[1], restSiteUsers = _a[2], directoryUsers = _a[3];
-                merged = mergeUniqueUsers(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray([], siteUsers, true), roleUsers, true), restSiteUsers, true), directoryUsers, true));
+                _a = _b.sent(), graphUsers = _a[0], directoryUsers = _a[1], siteUsers = _a[2], restSiteUsers = _a[3], roleUsers = _a[4];
+                merged = mergeUniqueUsers(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray(tslib_1.__spreadArray([], graphUsers, true), directoryUsers, true), siteUsers, true), restSiteUsers, true), roleUsers, true));
                 return [2 /*return*/, merged.slice(0, 10)];
             case 3:
                 error_1 = _b.sent();
@@ -368,15 +478,21 @@ var searchUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, v
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// User resolution — called when a user clicks a suggestion.
+//
+// Graph results do not have a SharePoint user ID yet — we call ensureUser
+// here so the save step gets a real SP ID to write into the list column.
+// ---------------------------------------------------------------------------
 var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, ensured, ensuredAny, id, email, name_1, loginName, _a, ensured, ensuredAny, id, _b, user, _c;
+    var sp, ensured, raw, id, _a, ensured, raw, id, _b, user, _c;
     var _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2;
     return tslib_1.__generator(this, function (_3) {
         switch (_3.label) {
             case 0:
-                if (candidate.id && candidate.id > 0) {
+                // Already has a valid SP user ID — nothing to do.
+                if (candidate.id && candidate.id > 0)
                     return [2 /*return*/, candidate];
-                }
                 sp = (0, pnpjsConfig_1.getSP)();
                 if (!candidate.loginName) return [3 /*break*/, 4];
                 _3.label = 1;
@@ -385,17 +501,14 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
                 return [4 /*yield*/, sp.web.ensureUser(candidate.loginName)];
             case 2:
                 ensured = _3.sent();
-                ensuredAny = ensured;
-                id = (_f = (_d = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _d !== void 0 ? _d : (_e = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _e === void 0 ? void 0 : _e.Id) !== null && _f !== void 0 ? _f : null;
-                email = (_j = (_g = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Email) !== null && _g !== void 0 ? _g : (_h = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _h === void 0 ? void 0 : _h.Email) !== null && _j !== void 0 ? _j : candidate.email;
-                name_1 = (_m = (_k = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Title) !== null && _k !== void 0 ? _k : (_l = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _l === void 0 ? void 0 : _l.Title) !== null && _m !== void 0 ? _m : candidate.name;
-                loginName = (_q = (_o = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.LoginName) !== null && _o !== void 0 ? _o : (_p = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _p === void 0 ? void 0 : _p.LoginName) !== null && _q !== void 0 ? _q : candidate.loginName;
+                raw = ensured;
+                id = (_f = (_d = raw === null || raw === void 0 ? void 0 : raw.Id) !== null && _d !== void 0 ? _d : (_e = raw === null || raw === void 0 ? void 0 : raw.data) === null || _e === void 0 ? void 0 : _e.Id) !== null && _f !== void 0 ? _f : null;
                 if (id) {
                     return [2 /*return*/, {
                             id: id,
-                            name: name_1,
-                            email: email || candidate.email,
-                            loginName: loginName || candidate.loginName
+                            name: (_j = (_g = raw === null || raw === void 0 ? void 0 : raw.Title) !== null && _g !== void 0 ? _g : (_h = raw === null || raw === void 0 ? void 0 : raw.data) === null || _h === void 0 ? void 0 : _h.Title) !== null && _j !== void 0 ? _j : candidate.name,
+                            email: (_m = (_k = raw === null || raw === void 0 ? void 0 : raw.Email) !== null && _k !== void 0 ? _k : (_l = raw === null || raw === void 0 ? void 0 : raw.data) === null || _l === void 0 ? void 0 : _l.Email) !== null && _m !== void 0 ? _m : candidate.email,
+                            loginName: (_q = (_o = raw === null || raw === void 0 ? void 0 : raw.LoginName) !== null && _o !== void 0 ? _o : (_p = raw === null || raw === void 0 ? void 0 : raw.data) === null || _p === void 0 ? void 0 : _p.LoginName) !== null && _q !== void 0 ? _q : candidate.loginName,
                         }];
                 }
                 return [3 /*break*/, 4];
@@ -410,14 +523,14 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
                 return [4 /*yield*/, sp.web.ensureUser("i:0#.f|membership|".concat(candidate.email))];
             case 6:
                 ensured = _3.sent();
-                ensuredAny = ensured;
-                id = (_t = (_r = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _r !== void 0 ? _r : (_s = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _s === void 0 ? void 0 : _s.Id) !== null && _t !== void 0 ? _t : null;
+                raw = ensured;
+                id = (_t = (_r = raw === null || raw === void 0 ? void 0 : raw.Id) !== null && _r !== void 0 ? _r : (_s = raw === null || raw === void 0 ? void 0 : raw.data) === null || _s === void 0 ? void 0 : _s.Id) !== null && _t !== void 0 ? _t : null;
                 if (id) {
                     return [2 /*return*/, {
                             id: id,
-                            name: (_w = (_u = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Title) !== null && _u !== void 0 ? _u : (_v = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _v === void 0 ? void 0 : _v.Title) !== null && _w !== void 0 ? _w : candidate.name,
-                            email: (_z = (_x = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Email) !== null && _x !== void 0 ? _x : (_y = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _y === void 0 ? void 0 : _y.Email) !== null && _z !== void 0 ? _z : candidate.email,
-                            loginName: (_2 = (_0 = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.LoginName) !== null && _0 !== void 0 ? _0 : (_1 = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _1 === void 0 ? void 0 : _1.LoginName) !== null && _2 !== void 0 ? _2 : candidate.loginName
+                            name: (_w = (_u = raw === null || raw === void 0 ? void 0 : raw.Title) !== null && _u !== void 0 ? _u : (_v = raw === null || raw === void 0 ? void 0 : raw.data) === null || _v === void 0 ? void 0 : _v.Title) !== null && _w !== void 0 ? _w : candidate.name,
+                            email: (_z = (_x = raw === null || raw === void 0 ? void 0 : raw.Email) !== null && _x !== void 0 ? _x : (_y = raw === null || raw === void 0 ? void 0 : raw.data) === null || _y === void 0 ? void 0 : _y.Email) !== null && _z !== void 0 ? _z : candidate.email,
+                            loginName: (_2 = (_0 = raw === null || raw === void 0 ? void 0 : raw.LoginName) !== null && _0 !== void 0 ? _0 : (_1 = raw === null || raw === void 0 ? void 0 : raw.data) === null || _1 === void 0 ? void 0 : _1.LoginName) !== null && _2 !== void 0 ? _2 : candidate.loginName,
                         }];
                 }
                 return [3 /*break*/, 8];
@@ -437,7 +550,7 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
                             id: user.Id,
                             name: user.Title || candidate.name,
                             email: user.Email || candidate.email,
-                            loginName: user.LoginName || candidate.loginName
+                            loginName: user.LoginName || candidate.loginName,
                         }];
                 }
                 return [3 /*break*/, 12];
@@ -448,6 +561,9 @@ var ensureResolvedUser = function (candidate) { return tslib_1.__awaiter(void 0,
         }
     });
 }); };
+// ---------------------------------------------------------------------------
+// Inject spinner keyframes once into the document head.
+// ---------------------------------------------------------------------------
 if (typeof document !== 'undefined') {
     var STYLE_ID = 'pp-spin-keyframes';
     if (!document.getElementById(STYLE_ID)) {
@@ -457,6 +573,9 @@ if (typeof document !== 'undefined') {
         document.head.appendChild(styleEl);
     }
 }
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 var inputRowStyle = {
     display: 'flex',
     alignItems: 'center',
@@ -464,7 +583,7 @@ var inputRowStyle = {
     backgroundColor: '#ffffff',
     border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '8px',
-    padding: '6px 10px'
+    padding: '6px 10px',
 };
 var transparentInputStyle = {
     flex: 1,
@@ -473,7 +592,7 @@ var transparentInputStyle = {
     outline: 'none',
     color: theme_1.THEME.colors.textStrong,
     fontSize: '14px',
-    minWidth: 0
+    minWidth: 0,
 };
 var dropdownContainerStyle = {
     position: 'absolute',
@@ -487,7 +606,7 @@ var dropdownContainerStyle = {
     zIndex: 9999,
     maxHeight: '220px',
     overflowY: 'auto',
-    padding: '4px'
+    padding: '4px',
 };
 var dropdownItemBaseStyle = {
     display: 'flex',
@@ -500,7 +619,7 @@ var dropdownItemBaseStyle = {
     cursor: 'pointer',
     textAlign: 'left',
     backgroundColor: 'transparent',
-    color: theme_1.THEME.colors.textPrimary
+    color: theme_1.THEME.colors.textPrimary,
 };
 var spinnerStyle = {
     width: '15px',
@@ -509,7 +628,7 @@ var spinnerStyle = {
     border: '2px solid rgba(0,0,0,0.1)',
     borderTopColor: '#2563eb',
     animation: 'pp-spin 600ms linear infinite',
-    flexShrink: 0
+    flexShrink: 0,
 };
 var selectedBannerStyle = {
     marginTop: '6px',
@@ -519,7 +638,7 @@ var selectedBannerStyle = {
     padding: '7px 10px',
     backgroundColor: '#eff6ff',
     borderRadius: '6px',
-    border: '1px solid #bfdbfe'
+    border: '1px solid #bfdbfe',
 };
 var makeAvatarStyle = function (name) { return ({
     width: '30px',
@@ -532,8 +651,14 @@ var makeAvatarStyle = function (name) { return ({
     color: '#fff',
     fontWeight: 700,
     fontSize: '11px',
-    flexShrink: 0
+    flexShrink: 0,
 }); };
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+var searchIcon = (React.createElement("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "#64748b", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
+    React.createElement("circle", { cx: "11", cy: "11", r: "8" }),
+    React.createElement("line", { x1: "21", y1: "21", x2: "16.65", y2: "16.65" })));
 var PeoplePicker = function (_a) {
     var _b;
     var value = _a.value, onChange = _a.onChange, _c = _a.placeholder, placeholder = _c === void 0 ? 'Search by name or email...' : _c, _d = _a.canEdit, canEdit = _d === void 0 ? true : _d, siteUrl = _a.siteUrl;
@@ -546,12 +671,14 @@ var PeoplePicker = function (_a) {
     var containerRef = (0, react_1.useRef)(null);
     var inputRef = (0, react_1.useRef)(null);
     var debounceRef = (0, react_1.useRef)(null);
+    // Sync display value when the external value prop changes.
     (0, react_1.useEffect)(function () {
         setInputValue(value ? value.name : '');
         setSuggestions([]);
         setIsOpen(false);
         setErrorMessage('');
     }, [value === null || value === void 0 ? void 0 : value.loginName, value === null || value === void 0 ? void 0 : value.email, value === null || value === void 0 ? void 0 : value.name]);
+    // Close dropdown when user clicks outside the component.
     (0, react_1.useEffect)(function () {
         var handleOutsideClick = function (event) {
             var _a;
@@ -564,11 +691,11 @@ var PeoplePicker = function (_a) {
         document.addEventListener('mousedown', handleOutsideClick);
         return function () { return document.removeEventListener('mousedown', handleOutsideClick); };
     }, [value === null || value === void 0 ? void 0 : value.name]);
+    // Clean up any pending debounce timer on unmount.
     (0, react_1.useEffect)(function () {
         return function () {
-            if (debounceRef.current) {
+            if (debounceRef.current)
                 clearTimeout(debounceRef.current);
-            }
         };
     }, []);
     var runSearch = (0, react_1.useCallback)(function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
@@ -587,9 +714,8 @@ var PeoplePicker = function (_a) {
                     results = _a.sent();
                     setSuggestions(results);
                     setIsOpen(results.length > 0);
-                    if (results.length === 0) {
+                    if (results.length === 0)
                         setErrorMessage('No users found');
-                    }
                     setFocusedIndex(-1);
                     return [3 /*break*/, 5];
                 case 3:
@@ -684,13 +810,14 @@ var PeoplePicker = function (_a) {
             setInputValue((_a = value === null || value === void 0 ? void 0 : value.name) !== null && _a !== void 0 ? _a : '');
         }
     };
+    // Read-only display mode — just show the avatar and name.
     if (!canEdit) {
         var displayName = (value === null || value === void 0 ? void 0 : value.name) || 'Unassigned';
         return (React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
             React.createElement("div", { style: makeAvatarStyle(displayName) }, getInitials(displayName)),
             React.createElement("div", null,
                 React.createElement("div", { style: { fontSize: '14px', color: theme_1.THEME.colors.textStrong } }, displayName),
-                (value === null || value === void 0 ? void 0 : value.email) && React.createElement("div", { style: { fontSize: '12px', color: theme_1.THEME.colors.textSecondary } }, value.email))));
+                (value === null || value === void 0 ? void 0 : value.email) && (React.createElement("div", { style: { fontSize: '12px', color: theme_1.THEME.colors.textSecondary } }, value.email)))));
     }
     var hasSelection = Boolean(value);
     return (React.createElement("div", { ref: containerRef, style: { position: 'relative' } },
@@ -706,7 +833,7 @@ var PeoplePicker = function (_a) {
                     fontSize: '18px',
                     lineHeight: 1,
                     padding: '0 2px',
-                    flexShrink: 0
+                    flexShrink: 0,
                 } }, "\u00D7"))),
         hasSelection && (React.createElement("div", { style: selectedBannerStyle },
             React.createElement("div", { style: { flex: 1 } },
@@ -717,9 +844,9 @@ var PeoplePicker = function (_a) {
                     color: '#2563eb',
                     fontWeight: 700,
                     textTransform: 'uppercase',
-                    letterSpacing: '0.4px'
+                    letterSpacing: '0.4px',
                 } }, "Selected"))),
-        errorMessage && !isSearching && !isOpen && React.createElement("div", { style: { marginTop: '5px', fontSize: '12px', color: '#f59e0b' } }, errorMessage),
+        errorMessage && !isSearching && !isOpen && (React.createElement("div", { style: { marginTop: '5px', fontSize: '12px', color: '#f59e0b' } }, errorMessage)),
         isOpen && suggestions.length > 0 && (React.createElement("div", { style: dropdownContainerStyle }, suggestions.map(function (user, index) { return (React.createElement("button", { key: "".concat(user.loginName || user.email || user.name, "-").concat(index), type: "button", onMouseDown: function (event) { return event.preventDefault(); }, onClick: function () { return void handleSelectUser(user); }, style: tslib_1.__assign(tslib_1.__assign({}, dropdownItemBaseStyle), { backgroundColor: focusedIndex === index ? 'rgba(37,99,235,0.1)' : 'transparent' }) },
             React.createElement("div", { style: makeAvatarStyle(user.name) }, getInitials(user.name)),
             React.createElement("div", { style: { flex: 1, minWidth: 0 } },
@@ -729,11 +856,8 @@ var PeoplePicker = function (_a) {
                         color: theme_1.THEME.colors.textSecondary,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
+                        whiteSpace: 'nowrap',
                     } }, user.email || user.loginName)))); })))));
 };
-var searchIcon = (React.createElement("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "#64748b", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
-    React.createElement("circle", { cx: "11", cy: "11", r: "8" }),
-    React.createElement("line", { x1: "21", y1: "21", x2: "16.65", y2: "16.65" })));
 exports.default = PeoplePicker;
 //# sourceMappingURL=PeoplePicker.js.map

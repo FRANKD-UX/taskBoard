@@ -3,8 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserRole = void 0;
 var tslib_1 = require("tslib");
 var pnpjsConfig_1 = require("../pnpjsConfig");
+// ---------------------------------------------------------------------------
+// The set of roles that are permitted to assign tasks to other people.
+// Keeping this as a constant makes it trivial to add new roles later.
+// ---------------------------------------------------------------------------
+var ASSIGNABLE_ROLES = new Set(['Owner', 'Manager', 'TeamLead']);
+// Managers can assign across the entire company regardless of department.
+var CROSS_DEPARTMENT_ROLES = new Set(['Owner', 'Manager']);
 var getUserRole = function (email) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, safeEmail, roles, _a, item, fallbackCanAssign;
+    var sp, safeEmail, roles, _a, item, role, canAssign, canAssignAcrossDepartments;
     var _b;
     return tslib_1.__generator(this, function (_c) {
         switch (_c.label) {
@@ -33,6 +40,7 @@ var getUserRole = function (email) { return tslib_1.__awaiter(void 0, void 0, vo
                         .filter("User/EMail eq '".concat(safeEmail, "' and IsActive eq 1"))
                         .top(1)()];
             case 4:
+                // Fallback — some SP environments restrict certain column selects.
                 roles = (_c.sent());
                 return [3 /*break*/, 5];
             case 5:
@@ -40,14 +48,17 @@ var getUserRole = function (email) { return tslib_1.__awaiter(void 0, void 0, vo
                 if (!item) {
                     return [2 /*return*/, null];
                 }
-                fallbackCanAssign = item.Role === 'Owner' || item.Role === 'Manager' || item.Role === 'TeamLead';
+                role = item.Role || '';
+                canAssign = item.CanAssign === true || ASSIGNABLE_ROLES.has(role);
+                canAssignAcrossDepartments = CROSS_DEPARTMENT_ROLES.has(role);
                 return [2 /*return*/, {
-                        role: item.Role || '',
+                        role: role,
                         department: item.Department,
                         email: (_b = item.User) === null || _b === void 0 ? void 0 : _b.EMail,
-                        canAssign: item.CanAssign === true || fallbackCanAssign,
+                        canAssign: canAssign,
+                        canAssignAcrossDepartments: canAssignAcrossDepartments,
                         canApprove: item.CanApprove === true,
-                        isDepartmentLead: item.IsDepartmentLead === true
+                        isDepartmentLead: item.IsDepartmentLead === true,
                     }];
         }
     });
