@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 
-import type { Task, TaskStatus, TaskPriority } from './TaskTypes';
+import type { Task, TaskStatus, TaskPriority, TaskSite } from './TaskTypes';
 import { THEME } from './theme';
 import PeoplePicker from './PeoplePicker';
 import type { IResolvedUser } from './PeoplePicker';
@@ -25,6 +25,7 @@ interface IFormState {
   title: string;
   status: TaskStatus;
   priority: TaskPriority;
+  site: TaskSite;
   startDate: string;
   dueDate: string;
   description: string;
@@ -42,6 +43,12 @@ const TASK_STATUSES: TaskStatus[] = [
   'ThisWeek',
   'InProgress',
   'Completed',
+];
+
+// Albertsdal is the main office and listed first so it is the default.
+const SITES: Array<{ value: TaskSite; label: string }> = [
+  { value: 'Albertsdal', label: 'Albertsdal (Main Office)' },
+  { value: 'Troyville',  label: 'Troyville (Secondary Office)' },
 ];
 
 const REQUEST_TYPES: string[] = ['Task', 'Incident'];
@@ -120,7 +127,7 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  backgroundColor: '#0f172a',
+  backgroundColor: THEME.colors.background,
   color: THEME.colors.textStrong,
   border: `1px solid ${THEME.colors.border}`,
   borderRadius: '8px',
@@ -153,6 +160,8 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
     title: '',
     status: defaultStatus,
     priority: 'Medium',
+    // Default to the main office — users at Troyville can change it.
+    site: 'Albertsdal',
     startDate: today,
     dueDate: '',
     description: '',
@@ -201,6 +210,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
       title: form.title.trim(),
       status: form.status,
       priority: form.priority,
+      site: form.site,
       startDate: form.startDate,
       dueDate: form.dueDate || undefined,
       description: form.description.trim() || undefined,
@@ -244,7 +254,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
               padding: '2px 6px',
             }}
           >
-            x
+            &times;
           </button>
         </div>
 
@@ -289,6 +299,21 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
             </div>
           )}
 
+          {/* Site — full width so both long labels are readable */}
+          <div>
+            <label style={labelStyle} htmlFor="ctm-site">Site</label>
+            <select
+              id="ctm-site"
+              value={form.site}
+              onChange={(e) => handleFieldChange('site', e.target.value as TaskSite)}
+              style={inputStyle}
+            >
+              {SITES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Status + Priority */}
           <div style={gridTwoColumnStyle}>
             <div>
@@ -327,7 +352,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
                 <span style={{
                   marginLeft: '6px',
                   fontSize: '10px',
-                  color: '#60a5fa',
+                  color: THEME.colors.primary,
                   textTransform: 'none',
                   fontWeight: 400,
                 }}>
@@ -425,7 +450,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
               padding: '10px 24px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: '#2563eb',
+              backgroundColor: THEME.colors.primary,
               color: '#ffffff',
               fontSize: '14px',
               fontWeight: 700,

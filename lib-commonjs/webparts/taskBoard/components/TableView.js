@@ -4,41 +4,48 @@ var tslib_1 = require("tslib");
 // TableView.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
+var theme_1 = require("./theme");
+// ---------------------------------------------------------------------------
+// Static styles — all colors pulled from THEME so this view matches BoardView
+// ---------------------------------------------------------------------------
 var tableStyle = {
     width: '100%',
     tableLayout: 'fixed',
     borderCollapse: 'collapse',
-    color: '#e2e8f0',
+    color: theme_1.THEME.colors.textPrimary,
 };
 var cellStyle = {
-    borderBottom: '1px solid #334155',
-    borderRight: '1px solid #334155',
+    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+    borderRight: "1px solid ".concat(theme_1.THEME.colors.border),
     padding: '10px 12px',
     textAlign: 'left',
 };
-var headerCellStyle = tslib_1.__assign(tslib_1.__assign({}, cellStyle), { position: 'sticky', top: 0, zIndex: 2, backgroundColor: '#25344f', color: '#f8fafc', fontWeight: 700, borderBottom: '2px solid #475569' });
+var headerCellStyle = tslib_1.__assign(tslib_1.__assign({}, cellStyle), { position: 'sticky', top: 0, zIndex: 2, backgroundColor: theme_1.THEME.colors.panel, color: theme_1.THEME.colors.textStrong, fontWeight: 700, borderBottom: "2px solid ".concat(theme_1.THEME.colors.border) });
 var columnWidths = {
     title: '33%',
     assignedTo: '15%',
     status: '12%',
     priority: '10%',
     dueDate: '12%',
-    timeline: '18%'
+    timeline: '18%',
 };
 var inputStyle = {
     width: '100%',
-    backgroundColor: '#0f172a',
-    color: '#f8fafc',
-    border: '1px solid #475569',
+    backgroundColor: theme_1.THEME.colors.background,
+    color: theme_1.THEME.colors.textStrong,
+    border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '6px',
-    padding: '6px 8px'
+    padding: '6px 8px',
 };
 var singleLineTextStyle = {
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-    display: 'block'
+    display: 'block',
 };
+// ---------------------------------------------------------------------------
+// Pure helper functions — no side effects, easy to test in isolation
+// ---------------------------------------------------------------------------
 var avatarPalette = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 var getInitials = function (name) {
     if (!name || name === 'Unassigned')
@@ -51,27 +58,10 @@ var getInitials = function (name) {
         .join('');
 };
 var getAvatarColor = function (name) {
-    if (!name || name === 'Unassigned') {
+    if (!name || name === 'Unassigned')
         return '#64748b';
-    }
     var hash = name.split('').reduce(function (acc, char) { return acc + char.charCodeAt(0); }, 0);
     return avatarPalette[hash % avatarPalette.length];
-};
-var getStatusColor = function (status) {
-    switch (status) {
-        case 'Unassigned':
-            return '#6b7280';
-        case 'Backlog':
-            return '#7c3aed';
-        case 'ThisWeek':
-            return '#0ea5e9';
-        case 'InProgress':
-            return '#f59e0b';
-        case 'Completed':
-            return '#22c55e';
-        default:
-            return '#6b7280';
-    }
 };
 var getTimelineProgress = function (task) {
     var start = new Date(task.createdAt || new Date()).getTime();
@@ -80,53 +70,31 @@ var getTimelineProgress = function (task) {
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) {
         return task.dueDate ? 65 : 25;
     }
-    if (now <= start) {
+    if (now <= start)
         return 5;
-    }
-    if (now >= end) {
+    if (now >= end)
         return 100;
-    }
     return Math.round(((now - start) / (end - start)) * 100);
 };
 var formatDateReadable = function (value) {
-    if (!value) {
+    if (!value)
         return 'N/A';
-    }
     var parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
+    if (Number.isNaN(parsed.getTime()))
         return value;
-    }
-    return parsed.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
+    return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 var formatDateCompact = function (value) {
-    if (!value) {
+    if (!value)
         return 'N/A';
-    }
     var parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
+    if (Number.isNaN(parsed.getTime()))
         return value;
-    }
-    return parsed.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric'
-    });
+    return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
-var getPriorityColor = function (priority) {
-    switch (priority) {
-        case 'High':
-            return '#ef4444';
-        case 'Medium':
-            return '#f59e0b';
-        case 'Low':
-            return '#22c55e';
-        default:
-            return '#6b7280';
-    }
-};
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 var TableView = function (_a) {
     var tasks = _a.tasks, statuses = _a.statuses, updateTask = _a.updateTask, deleteTask = _a.deleteTask, canAssign = _a.canAssign;
     var _b = (0, react_1.useState)(null), editingCell = _b[0], setEditingCell = _b[1];
@@ -142,6 +110,9 @@ var TableView = function (_a) {
             return acc;
         }, {});
     }), collapsedGroups = _j[0], setCollapsedGroups = _j[1];
+    // ---------------------------------------------------------------------------
+    // Cell editing helpers
+    // ---------------------------------------------------------------------------
     var isEditing = function (taskId, field) {
         return (editingCell === null || editingCell === void 0 ? void 0 : editingCell.taskId) === taskId && (editingCell === null || editingCell === void 0 ? void 0 : editingCell.field) === field;
     };
@@ -173,9 +144,8 @@ var TableView = function (_a) {
         setRowDrafts(function (current) {
             var _a;
             var row = current[taskId];
-            if (!row) {
+            if (!row)
                 return current;
-            }
             var _b = row, _c = field, _removed = _b[_c], remainingFields = tslib_1.__rest(_b, [typeof _c === "symbol" ? _c : _c + ""]);
             if (Object.keys(remainingFields).length === 0) {
                 var _d = current, _e = taskId, _removedRow = _d[_e], remainingRows = tslib_1.__rest(_d, [typeof _e === "symbol" ? _e : _e + ""]);
@@ -196,6 +166,9 @@ var TableView = function (_a) {
             return (tslib_1.__assign(tslib_1.__assign({}, current), (_a = {}, _a[status] = !current[status], _a)));
         });
     };
+    // ---------------------------------------------------------------------------
+    // Filtering and sorting
+    // ---------------------------------------------------------------------------
     var getTasksForStatus = function (status) {
         if (status === 'Unassigned') {
             return filteredTasks.filter(function (task) { return task.status === status || statuses.indexOf(task.status) === -1; });
@@ -208,27 +181,24 @@ var TableView = function (_a) {
         var matchesSearch = normalizedSearch.length === 0 ||
             task.title.toLowerCase().indexOf(normalizedSearch) > -1 ||
             (task.assignedTo || '').toLowerCase().indexOf(normalizedSearch) > -1;
-        if (!matchesSearch) {
+        if (!matchesSearch)
             return false;
-        }
-        if (filterValue === 'All') {
+        if (filterValue === 'All')
             return true;
-        }
-        if (statuses.indexOf(filterValue) > -1) {
+        if (statuses.indexOf(filterValue) > -1)
             return task.status === filterValue;
-        }
         return task.priority === filterValue;
     })
         .sort(function (a, b) {
-        if (sortDirection === 'None') {
+        if (sortDirection === 'None')
             return 0;
-        }
-        var left = a.title.toLowerCase();
-        var right = b.title.toLowerCase();
-        var comparison = left.localeCompare(right);
+        var comparison = a.title.toLowerCase().localeCompare(b.title.toLowerCase());
         return sortDirection === 'Asc' ? comparison : -comparison;
     });
-    return (React.createElement("div", { style: { padding: '8px', backgroundColor: '#171c33' } },
+    // ---------------------------------------------------------------------------
+    // Render
+    // ---------------------------------------------------------------------------
+    return (React.createElement("div", { style: { padding: '8px', backgroundColor: theme_1.THEME.colors.background } },
         React.createElement("div", { style: {
                 display: 'flex',
                 gap: '10px',
@@ -236,9 +206,9 @@ var TableView = function (_a) {
                 flexWrap: 'wrap',
                 marginBottom: '8px',
                 padding: '8px',
-                backgroundColor: '#1f2a44',
-                border: '1px solid #334155',
-                borderRadius: '10px'
+                backgroundColor: theme_1.THEME.colors.panel,
+                border: "1px solid ".concat(theme_1.THEME.colors.border),
+                borderRadius: '10px',
             } },
             React.createElement("input", { type: "text", value: searchTerm, onChange: function (event) { return setSearchTerm(event.target.value); }, placeholder: "Search tasks", style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { maxWidth: '260px' }) }),
             React.createElement("select", { value: filterValue, onChange: function (event) { return setFilterValue(event.target.value); }, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { width: '200px' }) },
@@ -247,13 +217,13 @@ var TableView = function (_a) {
                 React.createElement("option", { value: "Low" }, "Low Priority"),
                 React.createElement("option", { value: "Medium" }, "Medium Priority"),
                 React.createElement("option", { value: "High" }, "High Priority")),
-            React.createElement("button", { type: "button", onClick: function () { return setSortDirection(function (current) { return (current === 'None' ? 'Asc' : current === 'Asc' ? 'Desc' : 'None'); }); }, style: {
-                    backgroundColor: '#25344f',
-                    color: '#e2e8f0',
-                    border: '1px solid #475569',
+            React.createElement("button", { type: "button", onClick: function () { return setSortDirection(function (current) { return current === 'None' ? 'Asc' : current === 'Asc' ? 'Desc' : 'None'; }); }, style: {
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    color: theme_1.THEME.colors.textPrimary,
+                    border: "1px solid ".concat(theme_1.THEME.colors.border),
                     borderRadius: '8px',
                     padding: '7px 12px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                 } },
                 "Sort: ",
                 sortDirection)),
@@ -262,10 +232,10 @@ var TableView = function (_a) {
                 overflowY: 'auto',
                 scrollBehavior: 'smooth',
                 maxHeight: '70vh',
-                border: '1px solid #334155',
+                border: "1px solid ".concat(theme_1.THEME.colors.border),
                 borderRadius: '12px',
-                backgroundColor: '#1f2a44',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.2)'
+                backgroundColor: theme_1.THEME.colors.panel,
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.06)',
             } },
             React.createElement("table", { style: tableStyle },
                 React.createElement("colgroup", null,
@@ -288,38 +258,38 @@ var TableView = function (_a) {
                     var isCollapsed = Boolean(collapsedGroups[status]);
                     return (React.createElement(React.Fragment, { key: status },
                         groupIndex > 0 && (React.createElement("tr", null,
-                            React.createElement("td", { colSpan: 6, style: { height: '6px', padding: 0, border: 'none', backgroundColor: '#171c33' } }))),
+                            React.createElement("td", { colSpan: 6, style: { height: '6px', padding: 0, border: 'none', backgroundColor: theme_1.THEME.colors.background } }))),
                         React.createElement("tr", null,
-                            React.createElement("td", { colSpan: 6, style: tslib_1.__assign(tslib_1.__assign({}, cellStyle), { borderRight: 'none', borderTop: '2px solid #3b4f6f', borderBottom: '1px solid #3b4f6f', borderLeft: "4px solid ".concat(getStatusColor(status)), backgroundColor: '#1a253d', padding: '10px 12px' }) },
+                            React.createElement("td", { colSpan: 6, style: tslib_1.__assign(tslib_1.__assign({}, cellStyle), { borderRight: 'none', borderTop: "2px solid ".concat(theme_1.THEME.colors.border), borderBottom: "1px solid ".concat(theme_1.THEME.colors.border), borderLeft: "4px solid ".concat(theme_1.THEME.statusColors[status]), backgroundColor: theme_1.THEME.colors.surfaceHover, padding: '10px 12px' }) },
                                 React.createElement("button", { type: "button", onClick: function () { return toggleGroup(status); }, style: {
                                         width: '100%',
                                         background: 'transparent',
                                         border: 'none',
-                                        color: '#e2e8f0',
+                                        color: theme_1.THEME.colors.textPrimary,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
                                         cursor: 'pointer',
                                         fontWeight: 800,
-                                        textAlign: 'left'
+                                        textAlign: 'left',
                                     } },
                                     React.createElement("span", null,
                                         isCollapsed ? '▸' : '▾',
                                         " ",
                                         status),
                                     React.createElement("span", { style: {
-                                            color: '#e2e8f0',
-                                            backgroundColor: '#1f2a44',
-                                            border: '1px solid #475569',
+                                            color: theme_1.THEME.colors.textPrimary,
+                                            backgroundColor: theme_1.THEME.colors.panel,
+                                            border: "1px solid ".concat(theme_1.THEME.colors.border),
                                             borderRadius: '999px',
                                             padding: '2px 8px',
                                             fontWeight: 700,
-                                            fontSize: '11px'
+                                            fontSize: '11px',
                                         } }, groupedTasks.length)))),
                         !isCollapsed &&
                             groupedTasks.map(function (task) { return (React.createElement("tr", { key: task.id, onMouseEnter: function () { return setHoveredRowId(task.id); }, onMouseLeave: function () { return setHoveredRowId(null); }, style: {
-                                    backgroundColor: hoveredRowId === task.id ? '#2a3b5b' : '#1b2840',
-                                    transition: 'background-color 140ms ease'
+                                    backgroundColor: hoveredRowId === task.id ? theme_1.THEME.colors.surfaceHover : theme_1.THEME.colors.panel,
+                                    transition: 'background-color 140ms ease',
                                 } },
                                 React.createElement("td", { style: cellStyle, onClick: function () { return startEditing(task, 'title'); } }, isEditing(task.id, 'title') ? (React.createElement("input", { type: "text", value: getCellValue(task, 'title'), onChange: function (event) { return handleCellChange(task.id, 'title', event.target.value); }, onFocus: function () { return setFocusedCell({ taskId: task.id, field: 'title' }); }, onBlur: function () { return commitCellEdit(task.id, 'title'); }, autoFocus: true, style: getEditorStyle(task.id, 'title') })) : (React.createElement("span", { style: singleLineTextStyle }, task.title))),
                                 React.createElement("td", { style: cellStyle, onClick: function () { return canAssign && startEditing(task, 'assignedTo'); } }, canAssign && isEditing(task.id, 'assignedTo') ? (React.createElement("input", { type: "text", value: getCellValue(task, 'assignedTo'), onChange: function (event) { return handleCellChange(task.id, 'assignedTo', event.target.value); }, onFocus: function () { return setFocusedCell({ taskId: task.id, field: 'assignedTo' }); }, onBlur: function () { return commitCellEdit(task.id, 'assignedTo'); }, autoFocus: true, style: getEditorStyle(task.id, 'assignedTo') })) : (React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 } },
@@ -328,44 +298,42 @@ var TableView = function (_a) {
                                             height: '24px',
                                             borderRadius: '50%',
                                             backgroundColor: getAvatarColor(task.assignedTo || 'Unassigned'),
-                                            color: '#e2e8f0',
+                                            color: '#ffffff',
                                             display: 'inline-flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             fontSize: '11px',
-                                            fontWeight: 700
+                                            fontWeight: 700,
+                                            flexShrink: 0,
                                         } }, getInitials(task.assignedTo || 'Unassigned')),
                                     React.createElement("span", { style: singleLineTextStyle }, task.assignedTo || 'Unassigned')))),
                                 React.createElement("td", { style: cellStyle, onClick: function () { return startEditing(task, 'status'); } }, isEditing(task.id, 'status') ? (React.createElement("select", { value: getCellValue(task, 'status'), onChange: function (event) { return handleCellChange(task.id, 'status', event.target.value); }, onFocus: function () { return setFocusedCell({ taskId: task.id, field: 'status' }); }, onBlur: function () { return commitCellEdit(task.id, 'status'); }, autoFocus: true, style: getEditorStyle(task.id, 'status') }, statuses.map(function (itemStatus) { return (React.createElement("option", { key: itemStatus, value: itemStatus }, itemStatus)); }))) : (React.createElement("span", { style: {
-                                        backgroundColor: getStatusColor(task.status),
-                                        color: '#f8fafc',
+                                        backgroundColor: theme_1.THEME.statusColors[task.status],
+                                        color: '#ffffff',
                                         borderRadius: '999px',
                                         padding: '2px 10px',
                                         fontSize: '11px',
-                                        fontWeight: 600
+                                        fontWeight: 600,
                                     } }, task.status))),
                                 React.createElement("td", { style: cellStyle, onClick: function () { return startEditing(task, 'priority'); } }, isEditing(task.id, 'priority') ? (React.createElement("select", { value: getCellValue(task, 'priority'), onChange: function (event) { return handleCellChange(task.id, 'priority', event.target.value); }, onFocus: function () { return setFocusedCell({ taskId: task.id, field: 'priority' }); }, onBlur: function () { return commitCellEdit(task.id, 'priority'); }, autoFocus: true, style: getEditorStyle(task.id, 'priority') },
                                     React.createElement("option", { value: "Low" }, "Low"),
                                     React.createElement("option", { value: "Medium" }, "Medium"),
                                     React.createElement("option", { value: "High" }, "High"))) : (React.createElement("span", { style: {
-                                        backgroundColor: getPriorityColor(task.priority),
+                                        backgroundColor: theme_1.THEME.priorityColors[task.priority],
                                         color: '#0f172a',
                                         borderRadius: '999px',
                                         padding: '2px 10px',
                                         fontSize: '11px',
-                                        fontWeight: 700
+                                        fontWeight: 700,
                                     } }, task.priority))),
                                 React.createElement("td", { style: cellStyle, onClick: function () { return startEditing(task, 'dueDate'); } }, isEditing(task.id, 'dueDate') ? (React.createElement("input", { type: "date", value: getCellValue(task, 'dueDate'), onChange: function (event) { return handleCellChange(task.id, 'dueDate', event.target.value); }, onFocus: function () { return setFocusedCell({ taskId: task.id, field: 'dueDate' }); }, onBlur: function () { return commitCellEdit(task.id, 'dueDate'); }, autoFocus: true, style: getEditorStyle(task.id, 'dueDate') })) : (React.createElement("span", null, formatDateReadable(task.dueDate)))),
                                 React.createElement("td", { style: tslib_1.__assign(tslib_1.__assign({}, cellStyle), { borderRight: 'none' }) },
                                     React.createElement("div", { style: { display: 'grid', gap: '6px', padding: '4px 4px' } },
                                         React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: '6px', minHeight: '20px' } },
-                                            React.createElement("button", { type: "button", onClick: function (event) {
-                                                    event.stopPropagation();
-                                                    startEditing(task, 'title');
-                                                }, style: {
-                                                    backgroundColor: '#334155',
-                                                    color: '#f8fafc',
-                                                    border: 'none',
+                                            React.createElement("button", { type: "button", onClick: function (event) { event.stopPropagation(); startEditing(task, 'title'); }, style: {
+                                                    backgroundColor: theme_1.THEME.colors.surfaceHover,
+                                                    color: theme_1.THEME.colors.textPrimary,
+                                                    border: "1px solid ".concat(theme_1.THEME.colors.border),
                                                     borderRadius: '999px',
                                                     width: '22px',
                                                     height: '22px',
@@ -373,14 +341,11 @@ var TableView = function (_a) {
                                                     cursor: 'pointer',
                                                     opacity: hoveredRowId === task.id ? 1 : 0,
                                                     pointerEvents: hoveredRowId === task.id ? 'auto' : 'none',
-                                                    transition: 'opacity 120ms ease'
+                                                    transition: 'opacity 120ms ease',
                                                 }, "aria-label": "Edit task" }, "\u270E"),
-                                            React.createElement("button", { type: "button", onClick: function (event) {
-                                                    event.stopPropagation();
-                                                    deleteTask(task.id);
-                                                }, style: {
+                                            React.createElement("button", { type: "button", onClick: function (event) { event.stopPropagation(); deleteTask(task.id); }, style: {
                                                     backgroundColor: '#ef4444',
-                                                    color: '#f8fafc',
+                                                    color: '#ffffff',
                                                     border: 'none',
                                                     borderRadius: '999px',
                                                     width: '22px',
@@ -389,23 +354,28 @@ var TableView = function (_a) {
                                                     cursor: 'pointer',
                                                     opacity: hoveredRowId === task.id ? 1 : 0,
                                                     pointerEvents: hoveredRowId === task.id ? 'auto' : 'none',
-                                                    transition: 'opacity 120ms ease'
-                                                }, "aria-label": "Delete task" }, "\uD83D\uDDD1")),
+                                                    transition: 'opacity 120ms ease',
+                                                }, "aria-label": "Delete task" }, "x")),
                                         React.createElement("div", { style: {
                                                 height: '14px',
-                                                backgroundColor: '#111b2f',
+                                                backgroundColor: theme_1.THEME.colors.background,
                                                 borderRadius: '999px',
                                                 overflow: 'hidden',
-                                                border: '1px solid #334155',
-                                                padding: '1px'
+                                                border: "1px solid ".concat(theme_1.THEME.colors.border),
+                                                padding: '1px',
                                             } },
                                             React.createElement("div", { style: {
                                                     width: "".concat(getTimelineProgress(task), "%"),
                                                     height: '100%',
                                                     background: 'linear-gradient(90deg, #0ea5e9, #22d3ee 45%, #22c55e)',
-                                                    borderRadius: '999px'
+                                                    borderRadius: '999px',
                                                 } })),
-                                        React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '10px' } },
+                                        React.createElement("div", { style: {
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                color: theme_1.THEME.colors.textSecondary,
+                                                fontSize: '10px',
+                                            } },
                                             React.createElement("span", null, formatDateCompact(task.createdAt)),
                                             React.createElement("span", null, formatDateCompact(task.dueDate))))))); })));
                 }))))));

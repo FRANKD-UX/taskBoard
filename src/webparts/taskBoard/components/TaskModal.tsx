@@ -2,20 +2,32 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 
-import type { Task, TaskStatus, TaskPriority } from './TaskTypes';
+import type { Task, TaskStatus, TaskPriority, TaskSite } from './TaskTypes';
 import { THEME } from './theme';
 import PeoplePicker from './PeoplePicker';
 import type { IResolvedUser } from './PeoplePicker';
+import CollaborationPanel from './CollaborationPanel';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 export interface ITaskModalProps {
   task: Task | null;
   canAssign: boolean;
   siteUrl?: string;
   currentUserName: string;
+  // The numeric SharePoint user ID of the logged-in user.
+  // Needed so CollaborationPanel knows who sent each request.
+  currentUserSpId: number | null;
   onSave: (task: Task) => Promise<Task | null>;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const TEMP_ID_PREFIX = 'temp_';
 
@@ -27,8 +39,18 @@ const TASK_STATUSES: TaskStatus[] = [
   'Completed',
 ];
 
+// Albertsdal is the main office and listed first so it is the default.
+const SITES: Array<{ value: TaskSite; label: string }> = [
+  { value: 'Albertsdal', label: 'Albertsdal (Main Office)' },
+  { value: 'Troyville',  label: 'Troyville (Secondary Office)' },
+];
+
 const REQUEST_TYPES: string[] = ['Task', 'Incident'];
 const DEPARTMENTS: string[] = ['IT', 'Finance', 'Operations', 'Support'];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 const getTodayIso = (): string => {
   const d = new Date();
@@ -48,6 +70,18 @@ const buildResolvedUser = (task: Task): IResolvedUser | null => {
     loginName: task.assignedToLoginName ?? '',
   };
 };
+
+// Converts the string task id (used internally) to a numeric SP item ID.
+// Returns null for unsaved tasks (temp_ prefix) since they have no SP id yet.
+const toTaskSpId = (id: string): number | null => {
+  if (!id || id.startsWith(TEMP_ID_PREFIX)) return null;
+  const parsed = Number(id);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 
 const overlayStyle: React.CSSProperties = {
   position: 'fixed',
@@ -111,7 +145,7 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  backgroundColor: '#ffffff',
+  backgroundColor: THEME.colors.background,
   color: THEME.colors.textStrong,
   border: `1px solid ${THEME.colors.border}`,
   borderRadius: '8px',
@@ -146,8 +180,8 @@ const primaryBtnStyle: React.CSSProperties = {
   fontWeight: 700,
   fontSize: '14px',
   cursor: 'pointer',
-  backgroundColor: '#2563eb',
-  color: '#fff',
+  backgroundColor: THEME.colors.primary,
+  color: '#ffffff',
   transition: 'opacity 0.15s',
 };
 
@@ -160,7 +194,7 @@ const dangerBtnStyle: React.CSSProperties = {
   fontSize: '14px',
   cursor: 'pointer',
   backgroundColor: '#ef4444',
-  color: '#fff',
+  color: '#ffffff',
 };
 
 const cancelBtnStyle: React.CSSProperties = {
@@ -175,11 +209,16 @@ const cancelBtnStyle: React.CSSProperties = {
   color: THEME.colors.textPrimary,
 };
 
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 const TaskModal: React.FC<ITaskModalProps> = ({
   task,
   canAssign,
   siteUrl,
   currentUserName,
+  currentUserSpId,
   onSave,
   onDelete,
   onClose,
@@ -194,6 +233,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
 
   const isNewTask = Boolean(draft?.id.startsWith(TEMP_ID_PREFIX));
 
+  // Sync draft state when the task prop changes (different task opened).
   useEffect(() => {
     if (!task) {
       setDraft(null);
@@ -202,9 +242,11 @@ const TaskModal: React.FC<ITaskModalProps> = ({
     }
 
     const today = getTodayIso();
-
     setDraft({
       ...task,
+      // Guarantee site always has a valid value — handles tasks created
+      // before the Site column existed in the SP list.
+      site: task.site || 'Albertsdal',
       startDate: task.startDate || today,
       createdBy: task.createdBy || currentUserName,
     });
@@ -214,6 +256,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
     setTitleError('');
   }, [task?.id, currentUserName]);
 
+  // Auto-focus title when creating a new task.
   useEffect(() => {
     if (draft && isNewTask) {
       const timer = setTimeout(() => titleRef.current?.focus(), 60);
@@ -221,6 +264,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
     }
   }, [draft?.id, isNewTask]);
 
+  // Close on Escape key.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
@@ -264,7 +308,9 @@ const TaskModal: React.FC<ITaskModalProps> = ({
       }
       onClose();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not save to SharePoint. Please try again.';
+      const message = error instanceof Error
+        ? error.message
+        : 'Could not save to SharePoint. Please try again.';
       setSaveError(message);
     } finally {
       setIsSaving(false);
@@ -276,10 +322,14 @@ const TaskModal: React.FC<ITaskModalProps> = ({
     onClose();
   };
 
+  // The numeric SP item ID — null for new (unsaved) tasks.
+  const taskSpId = toTaskSpId(draft.id);
+
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
 
+        {/* Header */}
         <div style={headerStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: THEME.colors.textStrong }}>
@@ -296,8 +346,10 @@ const TaskModal: React.FC<ITaskModalProps> = ({
           </button>
         </div>
 
+        {/* Body */}
         <div style={bodyStyle}>
 
+          {/* Title */}
           <div>
             <label style={labelStyle} htmlFor="tm-title">
               Title <span style={{ color: '#ef4444' }}>*</span>
@@ -309,10 +361,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
               value={draft.title}
               onChange={(e) => update({ title: e.target.value })}
               placeholder="Enter task title"
-              style={{
-                ...inputStyle,
-                borderColor: titleError ? '#ef4444' : THEME.colors.border,
-              }}
+              style={{ ...inputStyle, borderColor: titleError ? '#ef4444' : THEME.colors.border }}
             />
             {titleError && (
               <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: '#ef4444' }}>
@@ -321,6 +370,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             )}
           </div>
 
+          {/* Assigned To */}
           {canAssign && (
             <div>
               <label style={labelStyle}>Assigned To</label>
@@ -334,6 +384,22 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             </div>
           )}
 
+          {/* Site — full width so both long labels are readable */}
+          <div>
+            <label style={labelStyle} htmlFor="tm-site">Site</label>
+            <select
+              id="tm-site"
+              value={draft.site ?? 'Albertsdal'}
+              onChange={(e) => update({ site: e.target.value as TaskSite })}
+              style={inputStyle}
+            >
+              {SITES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status + Priority */}
           <div style={gridTwoStyle}>
             <div>
               <label style={labelStyle} htmlFor="tm-status">Status</label>
@@ -363,12 +429,19 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             </div>
           </div>
 
+          {/* Start Date + Due Date */}
           <div style={gridTwoStyle}>
             <div>
               <label style={labelStyle} htmlFor="tm-start-date">
                 Start Date
                 {isNewTask && (
-                  <span style={{ marginLeft: '6px', fontSize: '10px', color: '#2563eb', textTransform: 'none', fontWeight: 400 }}>
+                  <span style={{
+                    marginLeft: '6px',
+                    fontSize: '10px',
+                    color: THEME.colors.primary,
+                    textTransform: 'none',
+                    fontWeight: 400,
+                  }}>
                     (auto)
                   </span>
                 )}
@@ -395,6 +468,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             </div>
           </div>
 
+          {/* Request Type + Department */}
           <div style={gridTwoStyle}>
             <div>
               <label style={labelStyle} htmlFor="tm-request-type">Request Type</label>
@@ -424,6 +498,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             </div>
           </div>
 
+          {/* Description */}
           <div>
             <label style={labelStyle} htmlFor="tm-description">Description</label>
             <textarea
@@ -436,8 +511,21 @@ const TaskModal: React.FC<ITaskModalProps> = ({
             />
           </div>
 
+          {/* Collaboration Panel — only shown for already-saved tasks.
+              A new task has no SP item ID yet so collaboration cannot be
+              requested until after the first save.                          */}
+          {!isNewTask && (
+            <CollaborationPanel
+              taskSpId={taskSpId}
+              taskTitle={draft.title}
+              currentUserSpId={currentUserSpId}
+              siteUrl={siteUrl}
+            />
+          )}
+
         </div>
 
+        {/* Save error banner */}
         {saveError && (
           <div style={{
             padding: '10px 24px',
@@ -448,6 +536,7 @@ const TaskModal: React.FC<ITaskModalProps> = ({
           </div>
         )}
 
+        {/* Footer */}
         <div style={footerStyle}>
           {isNewTask && (
             <button type="button" onClick={onClose} style={cancelBtnStyle}>

@@ -6,6 +6,10 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
+var CollaborationPanel_1 = tslib_1.__importDefault(require("./CollaborationPanel"));
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = [
     'Unassigned',
@@ -14,8 +18,16 @@ var TASK_STATUSES = [
     'InProgress',
     'Completed',
 ];
+// Albertsdal is the main office and listed first so it is the default.
+var SITES = [
+    { value: 'Albertsdal', label: 'Albertsdal (Main Office)' },
+    { value: 'Troyville', label: 'Troyville (Secondary Office)' },
+];
 var REQUEST_TYPES = ['Task', 'Incident'];
 var DEPARTMENTS = ['IT', 'Finance', 'Operations', 'Support'];
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 var getTodayIso = function () {
     var d = new Date();
     return [
@@ -35,6 +47,17 @@ var buildResolvedUser = function (task) {
         loginName: (_e = task.assignedToLoginName) !== null && _e !== void 0 ? _e : '',
     };
 };
+// Converts the string task id (used internally) to a numeric SP item ID.
+// Returns null for unsaved tasks (temp_ prefix) since they have no SP id yet.
+var toTaskSpId = function (id) {
+    if (!id || id.startsWith(TEMP_ID_PREFIX))
+        return null;
+    var parsed = Number(id);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 var overlayStyle = {
     position: 'fixed',
     inset: 0,
@@ -91,7 +114,7 @@ var labelStyle = {
 };
 var inputStyle = {
     width: '100%',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme_1.THEME.colors.background,
     color: theme_1.THEME.colors.textStrong,
     border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '8px',
@@ -123,8 +146,8 @@ var primaryBtnStyle = {
     fontWeight: 700,
     fontSize: '14px',
     cursor: 'pointer',
-    backgroundColor: '#2563eb',
-    color: '#fff',
+    backgroundColor: theme_1.THEME.colors.primary,
+    color: '#ffffff',
     transition: 'opacity 0.15s',
 };
 var dangerBtnStyle = {
@@ -136,7 +159,7 @@ var dangerBtnStyle = {
     fontSize: '14px',
     cursor: 'pointer',
     backgroundColor: '#ef4444',
-    color: '#fff',
+    color: '#ffffff',
 };
 var cancelBtnStyle = {
     flex: 1,
@@ -149,16 +172,20 @@ var cancelBtnStyle = {
     backgroundColor: 'transparent',
     color: theme_1.THEME.colors.textPrimary,
 };
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 var TaskModal = function (_a) {
-    var _b, _c, _d, _e, _f, _g;
-    var task = _a.task, canAssign = _a.canAssign, siteUrl = _a.siteUrl, currentUserName = _a.currentUserName, onSave = _a.onSave, onDelete = _a.onDelete, onClose = _a.onClose;
-    var _h = (0, react_1.useState)(null), draft = _h[0], setDraft = _h[1];
-    var _j = (0, react_1.useState)(null), assignee = _j[0], setAssignee = _j[1];
-    var _k = (0, react_1.useState)(false), isSaving = _k[0], setIsSaving = _k[1];
-    var _l = (0, react_1.useState)(''), saveError = _l[0], setSaveError = _l[1];
-    var _m = (0, react_1.useState)(''), titleError = _m[0], setTitleError = _m[1];
+    var _b, _c, _d, _e, _f, _g, _h;
+    var task = _a.task, canAssign = _a.canAssign, siteUrl = _a.siteUrl, currentUserName = _a.currentUserName, currentUserSpId = _a.currentUserSpId, onSave = _a.onSave, onDelete = _a.onDelete, onClose = _a.onClose;
+    var _j = (0, react_1.useState)(null), draft = _j[0], setDraft = _j[1];
+    var _k = (0, react_1.useState)(null), assignee = _k[0], setAssignee = _k[1];
+    var _l = (0, react_1.useState)(false), isSaving = _l[0], setIsSaving = _l[1];
+    var _m = (0, react_1.useState)(''), saveError = _m[0], setSaveError = _m[1];
+    var _o = (0, react_1.useState)(''), titleError = _o[0], setTitleError = _o[1];
     var titleRef = (0, react_1.useRef)(null);
     var isNewTask = Boolean(draft === null || draft === void 0 ? void 0 : draft.id.startsWith(TEMP_ID_PREFIX));
+    // Sync draft state when the task prop changes (different task opened).
     (0, react_1.useEffect)(function () {
         if (!task) {
             setDraft(null);
@@ -166,17 +193,22 @@ var TaskModal = function (_a) {
             return;
         }
         var today = getTodayIso();
-        setDraft(tslib_1.__assign(tslib_1.__assign({}, task), { startDate: task.startDate || today, createdBy: task.createdBy || currentUserName }));
+        setDraft(tslib_1.__assign(tslib_1.__assign({}, task), { 
+            // Guarantee site always has a valid value — handles tasks created
+            // before the Site column existed in the SP list.
+            site: task.site || 'Albertsdal', startDate: task.startDate || today, createdBy: task.createdBy || currentUserName }));
         setAssignee(buildResolvedUser(task));
         setSaveError('');
         setTitleError('');
     }, [task === null || task === void 0 ? void 0 : task.id, currentUserName]);
+    // Auto-focus title when creating a new task.
     (0, react_1.useEffect)(function () {
         if (draft && isNewTask) {
             var timer_1 = setTimeout(function () { var _a; return (_a = titleRef.current) === null || _a === void 0 ? void 0 : _a.focus(); }, 60);
             return function () { return clearTimeout(timer_1); };
         }
     }, [draft === null || draft === void 0 ? void 0 : draft.id, isNewTask]);
+    // Close on Escape key.
     (0, react_1.useEffect)(function () {
         var handleKey = function (e) {
             if (e.key === 'Escape')
@@ -229,7 +261,9 @@ var TaskModal = function (_a) {
                     return [3 /*break*/, 5];
                 case 3:
                     error_1 = _b.sent();
-                    message = error_1 instanceof Error ? error_1.message : 'Could not save to SharePoint. Please try again.';
+                    message = error_1 instanceof Error
+                        ? error_1.message
+                        : 'Could not save to SharePoint. Please try again.';
                     setSaveError(message);
                     return [3 /*break*/, 5];
                 case 4:
@@ -243,6 +277,8 @@ var TaskModal = function (_a) {
         onDelete(draft.id);
         onClose();
     };
+    // The numeric SP item ID — null for new (unsaved) tasks.
+    var taskSpId = toTaskSpId(draft.id);
     return (React.createElement("div", { style: overlayStyle, onClick: onClose },
         React.createElement("div", { style: modalStyle, onClick: function (e) { return e.stopPropagation(); } },
             React.createElement("div", { style: headerStyle },
@@ -262,6 +298,9 @@ var TaskModal = function (_a) {
                 canAssign && (React.createElement("div", null,
                     React.createElement("label", { style: labelStyle }, "Assigned To"),
                     React.createElement(PeoplePicker_1.default, { value: assignee, onChange: handleAssigneeChange, placeholder: "Search by name or email...", canEdit: true, siteUrl: siteUrl }))),
+                React.createElement("div", null,
+                    React.createElement("label", { style: labelStyle, htmlFor: "tm-site" }, "Site"),
+                    React.createElement("select", { id: "tm-site", value: (_b = draft.site) !== null && _b !== void 0 ? _b : 'Albertsdal', onChange: function (e) { return update({ site: e.target.value }); }, style: inputStyle }, SITES.map(function (s) { return (React.createElement("option", { key: s.value, value: s.value }, s.label)); }))),
                 React.createElement("div", { style: gridTwoStyle },
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "tm-status" }, "Status"),
@@ -276,11 +315,17 @@ var TaskModal = function (_a) {
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "tm-start-date" },
                             "Start Date",
-                            isNewTask && (React.createElement("span", { style: { marginLeft: '6px', fontSize: '10px', color: '#2563eb', textTransform: 'none', fontWeight: 400 } }, "(auto)"))),
-                        React.createElement("input", { id: "tm-start-date", type: "date", value: (_c = (_b = draft.startDate) === null || _b === void 0 ? void 0 : _b.split('T')[0]) !== null && _c !== void 0 ? _c : '', onChange: function (e) { return update({ startDate: e.target.value }); }, style: isNewTask ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewTask })),
+                            isNewTask && (React.createElement("span", { style: {
+                                    marginLeft: '6px',
+                                    fontSize: '10px',
+                                    color: theme_1.THEME.colors.primary,
+                                    textTransform: 'none',
+                                    fontWeight: 400,
+                                } }, "(auto)"))),
+                        React.createElement("input", { id: "tm-start-date", type: "date", value: (_d = (_c = draft.startDate) === null || _c === void 0 ? void 0 : _c.split('T')[0]) !== null && _d !== void 0 ? _d : '', onChange: function (e) { return update({ startDate: e.target.value }); }, style: isNewTask ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewTask })),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "tm-due-date" }, "Due Date"),
-                        React.createElement("input", { id: "tm-due-date", type: "date", value: (_e = (_d = draft.dueDate) === null || _d === void 0 ? void 0 : _d.split('T')[0]) !== null && _e !== void 0 ? _e : '', min: (_f = draft.startDate) === null || _f === void 0 ? void 0 : _f.split('T')[0], onChange: function (e) { return update({ dueDate: e.target.value }); }, style: inputStyle }))),
+                        React.createElement("input", { id: "tm-due-date", type: "date", value: (_f = (_e = draft.dueDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', min: (_g = draft.startDate) === null || _g === void 0 ? void 0 : _g.split('T')[0], onChange: function (e) { return update({ dueDate: e.target.value }); }, style: inputStyle }))),
                 React.createElement("div", { style: gridTwoStyle },
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "tm-request-type" }, "Request Type"),
@@ -290,7 +335,8 @@ var TaskModal = function (_a) {
                         React.createElement("select", { id: "tm-department", value: draft.department, onChange: function (e) { return update({ department: e.target.value }); }, style: inputStyle }, DEPARTMENTS.map(function (d) { return (React.createElement("option", { key: d, value: d }, d)); })))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "tm-description" }, "Description"),
-                    React.createElement("textarea", { id: "tm-description", value: (_g = draft.description) !== null && _g !== void 0 ? _g : '', onChange: function (e) { return update({ description: e.target.value }); }, placeholder: "Add a description...", rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) }))),
+                    React.createElement("textarea", { id: "tm-description", value: (_h = draft.description) !== null && _h !== void 0 ? _h : '', onChange: function (e) { return update({ description: e.target.value }); }, placeholder: "Add a description...", rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),
+                !isNewTask && (React.createElement(CollaborationPanel_1.default, { taskSpId: taskSpId, taskTitle: draft.title, currentUserSpId: currentUserSpId, siteUrl: siteUrl }))),
             saveError && (React.createElement("div", { style: {
                     padding: '10px 24px',
                     backgroundColor: '#fef2f2',

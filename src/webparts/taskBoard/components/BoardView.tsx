@@ -20,6 +20,8 @@ const boardStyle: React.CSSProperties = {
   padding: '12px 8px 16px 8px',
   scrollBehavior: 'smooth',
   backgroundColor: THEME.colors.background,
+  // Ensure the board is the positioning reference for the drag preview
+  position: 'relative',
 };
 
 const columnStyle: React.CSSProperties = {
@@ -100,157 +102,299 @@ const BoardView: React.FC<IBoardViewProps> = ({
       <div style={boardStyle}>
         {statuses.map((status) => (
           <Droppable key={status} droppableId={status}>
-            {(dropProvided, dropSnapshot) => (
-              <div
-                ref={dropProvided.innerRef}
-                {...dropProvided.droppableProps}
-                onMouseEnter={() => setHoveredColumn(status)}
-                onMouseLeave={() => setHoveredColumn(null)}
-                style={{
-                  ...columnStyle,
-                  backgroundColor: dropSnapshot.isDraggingOver
-                    ? '#e2e8f0'
-                    : hoveredColumn === status ? '#f1f5f9' : THEME.colors.panel,
-                  borderRadius: '12px',
-                  padding: '12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  minHeight: '300px',
-                  boxShadow: dropSnapshot.isDraggingOver
-                    ? 'inset 0 0 0 1px rgba(59,130,246,0.3)' : '0 1px 3px rgba(0,0,0,0.05)',
-                  transition: 'background-color 160ms ease, box-shadow 160ms ease',
-                }}
-              >
-                <div style={{ height: '6px', borderRadius: '999px', backgroundColor: getStatusColor(status), marginBottom: '2px' }} />
+            {(dropProvided, dropSnapshot) => {
+              // Remove transition during drag to prevent column shifting
+              const columnTransition = dropSnapshot.isDraggingOver
+                ? 'none'
+                : 'background-color 160ms ease, box-shadow 160ms ease';
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: THEME.colors.textPrimary }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getStatusColor(status), display: 'inline-block' }} />
-                    <span>{status}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: THEME.colors.textPrimary, backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '999px', padding: '2px 8px', fontSize: '12px' }}>
-                      {tasksByStatus[status].length}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onNewTask(status)}
-                      aria-label={`New task in ${status}`}
-                      style={{ width: '24px', height: '24px', borderRadius: '999px', border: `1px solid ${THEME.colors.border}`, backgroundColor: THEME.colors.panel, color: THEME.colors.textPrimary, cursor: 'pointer', lineHeight: 1, fontSize: '16px' }}
+              const isEmpty = tasksByStatus[status].length === 0;
+
+              return (
+                <div
+                  ref={dropProvided.innerRef}
+                  {...dropProvided.droppableProps}
+                  onMouseEnter={() => setHoveredColumn(status)}
+                  onMouseLeave={() => setHoveredColumn(null)}
+                  style={{
+                    ...columnStyle,
+                    backgroundColor: dropSnapshot.isDraggingOver
+                      ? '#e2e8f0'
+                      : hoveredColumn === status
+                      ? '#f1f5f9'
+                      : THEME.colors.panel,
+                    borderRadius: '12px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    minHeight: '300px',
+                    boxShadow: dropSnapshot.isDraggingOver
+                      ? 'inset 0 0 0 1px rgba(59,130,246,0.3)'
+                      : '0 1px 3px rgba(0,0,0,0.05)',
+                    transition: columnTransition,
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '6px',
+                      borderRadius: '999px',
+                      backgroundColor: getStatusColor(status),
+                      marginBottom: '2px',
+                    }}
+                  />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: THEME.colors.textPrimary,
+                      }}
                     >
-                      +
-                    </button>
+                      <span
+                        style={{
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '50%',
+                          backgroundColor: getStatusColor(status),
+                          display: 'inline-block',
+                        }}
+                      />
+                      <span>{status}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          color: THEME.colors.textPrimary,
+                          backgroundColor: THEME.colors.panel,
+                          border: `1px solid ${THEME.colors.border}`,
+                          borderRadius: '999px',
+                          padding: '2px 8px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {tasksByStatus[status].length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onNewTask(status)}
+                        aria-label={`New task in ${status}`}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '999px',
+                          border: `1px solid ${THEME.colors.border}`,
+                          backgroundColor: THEME.colors.panel,
+                          color: THEME.colors.textPrimary,
+                          cursor: 'pointer',
+                          lineHeight: 1,
+                          fontSize: '16px',
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Task list container with stable height */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {isEmpty && (
+                      <div style={{ color: THEME.colors.textSecondary, fontSize: '12px', padding: '8px 2px' }}>
+                        No tasks yet
+                      </div>
+                    )}
+
+                    {tasksByStatus[status].map((task, index) => (
+                      <Draggable key={task.id} draggableId={task.id} index={index}>
+                        {(dragProvided, dragSnapshot) => {
+                          const isEntering = Boolean(enteringTaskIds[task.id]);
+                          const baseStyle = dragProvided.draggableProps.style as React.CSSProperties;
+
+                          // CRITICAL: Force no transition on transform while dragging
+                          const dragStyle: React.CSSProperties = dragSnapshot.isDragging
+                            ? {
+                                ...baseStyle,
+                                transition: 'none',
+                                willChange: 'transform',
+                                userSelect: 'none',
+                                pointerEvents: 'none',
+                                backgroundColor: THEME.colors.panel,
+                                borderRadius: '10px',
+                                padding: '14px',
+                                borderLeft: `4px solid ${getStatusColor(status)}`,
+                                border: '1px solid #e2e8f0',
+                                color: THEME.colors.textPrimary,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '12px',
+                                cursor: 'grabbing',
+                                opacity: 1,
+                                boxShadow:
+                                  '0 10px 20px rgba(0,0,0,0.15),0 0 0 1px rgba(59,130,246,0.5)',
+                                transform: baseStyle.transform,
+                              }
+                            : {
+                                ...baseStyle,
+                                backgroundColor: THEME.colors.panel,
+                                borderRadius: '10px',
+                                padding: '14px',
+                                borderLeft: `4px solid ${getStatusColor(status)}`,
+                                border: '1px solid #e2e8f0',
+                                color: THEME.colors.textPrimary,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '12px',
+                                cursor: 'default',
+                                opacity: isEntering ? 0 : 1,
+                                userSelect: 'none',
+                                boxShadow:
+                                  hoveredTaskId === task.id
+                                    ? '0 10px 20px rgba(0,0,0,0.1),0 0 0 1px rgba(59,130,246,0.3)'
+                                    : '0 2px 6px rgba(0,0,0,0.05)',
+                                transition: baseStyle?.transition
+                                  ? `${baseStyle.transition}, box-shadow 160ms ease, opacity 180ms ease`
+                                  : 'box-shadow 160ms ease, opacity 180ms ease',
+                              };
+
+                          const assigneeName = task.assignedTo || 'Unassigned';
+
+                          return (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              style={dragStyle}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div
+                                  {...dragProvided.dragHandleProps}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '20px',
+                                    height: '20px',
+                                    cursor: 'grab',
+                                    color: THEME.colors.textSecondary,
+                                    fontSize: '16px',
+                                    userSelect: 'none',
+                                    flexShrink: 0,
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                  ☰
+                                </div>
+
+                                <div
+                                  onClick={() => onTaskClick(task)}
+                                  onMouseEnter={() => setHoveredTaskId(task.id)}
+                                  onMouseLeave={() => setHoveredTaskId(null)}
+                                  style={{
+                                    flex: 1,
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 700 }}>{task.title || 'New Task'}</div>
+                                  <span
+                                    style={{
+                                      backgroundColor: getStatusColor(status),
+                                      color: '#ffffff',
+                                      borderRadius: '999px',
+                                      padding: '2px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div
+                                onClick={() => onTaskClick(task)}
+                                onMouseEnter={() => setHoveredTaskId(task.id)}
+                                onMouseLeave={() => setHoveredTaskId(null)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  color: THEME.colors.textPrimary,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: '26px',
+                                    height: '26px',
+                                    borderRadius: '50%',
+                                    backgroundColor: getAvatarColor(assigneeName),
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#ffffff',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {getInitials(assigneeName)}
+                                </div>
+                                <span>{assigneeName}</span>
+                              </div>
+
+                              <div
+                                onClick={() => onTaskClick(task)}
+                                onMouseEnter={() => setHoveredTaskId(task.id)}
+                                onMouseLeave={() => setHoveredTaskId(null)}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <span style={{ color: THEME.colors.textSecondary }}>
+                                  {formatDisplayDate(task.dueDate)}
+                                </span>
+                                <span
+                                  style={{
+                                    backgroundColor: getPriorityColor(task.priority),
+                                    color: '#0f172a',
+                                    borderRadius: '999px',
+                                    padding: '2px 8px',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {task.priority}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      </Draggable>
+                    ))}
+
+                    {/* Placeholder is always present but hidden when not needed.
+                        This prevents layout shifts when dragging into an empty column. */}
+                    <div
+                      style={{
+                        display: dropSnapshot.isDraggingOver && isEmpty ? 'block' : 'none',
+                        minHeight: '80px',
+                        width: '100%',
+                      }}
+                    >
+                      {dropProvided.placeholder}
+                    </div>
+                    {!isEmpty && dropProvided.placeholder}
                   </div>
                 </div>
-
-                {tasksByStatus[status].length === 0 && (
-                  <div style={{ color: THEME.colors.textSecondary, fontSize: '12px', padding: '8px 2px' }}>No tasks yet</div>
-                )}
-
-                {tasksByStatus[status].map((task, index) => (
-                  <Draggable key={task.id} draggableId={task.id} index={index}>
-                    {(dragProvided, dragSnapshot) => {
-                      const isEntering = Boolean(enteringTaskIds[task.id]);
-                      const dragStyle = (dragProvided.draggableProps.style || {}) as React.CSSProperties;
-                      const base = typeof dragStyle.transform === 'string' ? dragStyle.transform : '';
-                      const transform = dragSnapshot.isDragging
-                        ? `${base} rotate(2deg) scale(1.03)`
-                        : hoveredTaskId === task.id ? 'scale(1.01)'
-                        : isEntering ? 'scale(0.97) translateY(6px)' : base;
-
-                      const assigneeName = task.assignedTo || 'Unassigned';
-
-                      return (
-                        <div
-                          ref={dragProvided.innerRef}
-                          {...dragProvided.draggableProps}
-                          style={{
-                            backgroundColor: THEME.colors.panel,
-                            borderRadius: '10px',
-                            padding: '14px',
-                            borderLeft: `4px solid ${getStatusColor(status)}`,
-                            border: '1px solid #e2e8f0',
-                            color: THEME.colors.textPrimary,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px',
-                            cursor: 'default',
-                            backgroundImage: 'none',
-                            transform: transform || 'scale(1)',
-                            opacity: isEntering ? 0 : 1,
-                            boxShadow: dragSnapshot.isDragging || hoveredTaskId === task.id
-                              ? '0 10px 20px rgba(0,0,0,0.1),0 0 0 1px rgba(59,130,246,0.3)'
-                              : '0 2px 6px rgba(0,0,0,0.05)',
-                            transition: `${typeof dragStyle.transition === 'string' ? dragStyle.transition : 'transform 180ms ease'},box-shadow 160ms ease,opacity 180ms ease`,
-                            ...dragStyle,
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div
-                              {...dragProvided.dragHandleProps}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: '20px',
-                                height: '20px',
-                                cursor: 'grab',
-                                color: THEME.colors.textSecondary,
-                                fontSize: '16px',
-                                userSelect: 'none',
-                                flexShrink: 0,
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                            >
-                              ☰
-                            </div>
-
-                            <div
-                              onClick={() => onTaskClick(task)}
-                              onMouseEnter={() => setHoveredTaskId(task.id)}
-                              onMouseLeave={() => setHoveredTaskId(null)}
-                              style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                            >
-                              <div style={{ fontWeight: 700 }}>{task.title || 'New Task'}</div>
-                              <span style={{ backgroundColor: getStatusColor(status), color: '#ffffff', borderRadius: '999px', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}>
-                                {status}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div
-                            onClick={() => onTaskClick(task)}
-                            onMouseEnter={() => setHoveredTaskId(task.id)}
-                            onMouseLeave={() => setHoveredTaskId(null)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', color: THEME.colors.textPrimary, fontSize: '12px', cursor: 'pointer' }}
-                          >
-                            <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: getAvatarColor(assigneeName), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 600 }}>
-                              {getInitials(assigneeName)}
-                            </div>
-                            <span>{assigneeName}</span>
-                          </div>
-
-                          <div
-                            onClick={() => onTaskClick(task)}
-                            onMouseEnter={() => setHoveredTaskId(task.id)}
-                            onMouseLeave={() => setHoveredTaskId(null)}
-                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', cursor: 'pointer' }}
-                          >
-                            <span style={{ color: THEME.colors.textSecondary }}>{formatDisplayDate(task.dueDate)}</span>
-                            <span style={{ backgroundColor: getPriorityColor(task.priority), color: '#0f172a', borderRadius: '999px', padding: '2px 8px', fontWeight: 600 }}>
-                              {task.priority}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    }}
-                  </Draggable>
-                ))}
-
-                {dropProvided.placeholder}
-              </div>
-            )}
+              );
+            }}
           </Droppable>
         ))}
       </div>

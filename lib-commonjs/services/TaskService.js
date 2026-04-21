@@ -9,7 +9,7 @@ var ASSIGNEE_FIELD_CANDIDATES = [
     'AssignedTo',
     'Assigned To',
     'AssignedUser',
-    'Assigned User'
+    'Assigned User',
 ];
 var TaskService = /** @class */ (function () {
     function TaskService() {
@@ -38,6 +38,9 @@ var TaskService = /** @class */ (function () {
                                 title: item.Title || '',
                                 status: item.Status || 'Unassigned',
                                 priority: item.Priority || 'Medium',
+                                // Default to Albertsdal (main office) when the field is blank —
+                                // this covers tasks created before Site was added to the list.
+                                site: item.Site || 'Albertsdal',
                                 assignedTo: assignee === null || assignee === void 0 ? void 0 : assignee.Title,
                                 assignedToId: (_d = (_c = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _c !== void 0 ? _c : fallbackAssigneeId) !== null && _d !== void 0 ? _d : null,
                                 assignedToEmail: (_e = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _e !== void 0 ? _e : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
@@ -46,7 +49,7 @@ var TaskService = /** @class */ (function () {
                                 dueDate: item.DueDate,
                                 description: item.Description,
                                 requestType: item.RequestType || 'Task',
-                                department: item.Department || 'IT'
+                                department: item.Department || 'IT',
                             };
                         };
                         _a.label = 3;
@@ -54,7 +57,7 @@ var TaskService = /** @class */ (function () {
                         _a.trys.push([3, 5, , 11]);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.select('Id', 'Title', 'Status', 'Priority', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), "".concat(assigneeField.internalName, "/EMail"), "".concat(assigneeField.internalName, "/LoginName"), assigneeLookupField)
+                                .items.select('Id', 'Title', 'Status', 'Priority', 'Site', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), "".concat(assigneeField.internalName, "/EMail"), "".concat(assigneeField.internalName, "/LoginName"), assigneeLookupField)
                                 .expand(assigneeField.internalName)
                                 .top(500)()];
                     case 4:
@@ -68,7 +71,7 @@ var TaskService = /** @class */ (function () {
                         _a.trys.push([6, 8, , 9]);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.select('Id', 'Title', 'Status', 'Priority', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), assigneeLookupField)
+                                .items.select('Id', 'Title', 'Status', 'Priority', 'Site', 'StartDate', 'DueDate', 'Description', 'RequestType', 'Department', "".concat(assigneeField.internalName, "/Title"), "".concat(assigneeField.internalName, "/Id"), assigneeLookupField)
                                 .expand(assigneeField.internalName)
                                 .top(500)()];
                     case 7:
@@ -105,11 +108,12 @@ var TaskService = /** @class */ (function () {
                             Title: task.title,
                             Status: task.status,
                             Priority: task.priority,
+                            Site: task.site,
                             StartDate: this.validateDate(task.startDate),
                             DueDate: this.validateDate(task.dueDate),
                             Description: task.description,
                             RequestType: task.requestType,
-                            Department: task.department
+                            Department: task.department,
                         };
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
                     case 2:
@@ -141,11 +145,12 @@ var TaskService = /** @class */ (function () {
                             Title: updates.title,
                             Status: updates.status,
                             Priority: updates.priority,
+                            Site: updates.site,
                             StartDate: this.validateDate(updates.startDate),
                             DueDate: this.validateDate(updates.dueDate),
                             Description: updates.description,
                             RequestType: updates.requestType,
-                            Department: updates.department
+                            Department: updates.department,
                         };
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
                     case 2:
@@ -179,6 +184,9 @@ var TaskService = /** @class */ (function () {
             });
         });
     };
+    // ---------------------------------------------------------------------------
+    // Private helpers
+    // ---------------------------------------------------------------------------
     TaskService.prototype.validateDate = function (date) {
         if (!date)
             return null;
@@ -258,12 +266,10 @@ var TaskService = /** @class */ (function () {
                     case 2:
                         fields = _a.sent();
                         field = fields.find(function (candidate) {
-                            if (!(candidate === null || candidate === void 0 ? void 0 : candidate.InternalName)) {
+                            if (!(candidate === null || candidate === void 0 ? void 0 : candidate.InternalName))
                                 return false;
-                            }
-                            if (candidate.TypeAsString !== 'User' && candidate.TypeAsString !== 'UserMulti') {
+                            if (candidate.TypeAsString !== 'User' && candidate.TypeAsString !== 'UserMulti')
                                 return false;
-                            }
                             var normalizedInternalName = _this.normalizeFieldName(candidate.InternalName);
                             var normalizedTitle = _this.normalizeFieldName(candidate.Title);
                             return ASSIGNEE_FIELD_CANDIDATES.some(function (name) {
@@ -276,7 +282,7 @@ var TaskService = /** @class */ (function () {
                         }
                         return [2 /*return*/, {
                                 internalName: field.InternalName,
-                                isMulti: field.AllowMultipleValues === true || field.TypeAsString === 'UserMulti'
+                                isMulti: field.AllowMultipleValues === true || field.TypeAsString === 'UserMulti',
                             }];
                 }
             });
@@ -292,24 +298,19 @@ var TaskService = /** @class */ (function () {
             payload["".concat(fieldName, "Id")] = assignedToId;
             return;
         }
-        payload["".concat(fieldName, "Id")] = {
-            results: [assignedToId]
-        };
+        payload["".concat(fieldName, "Id")] = { results: [assignedToId] };
     };
     TaskService.prototype.getPrimaryAssignee = function (value) {
-        if (!value) {
+        if (!value)
             return undefined;
-        }
         return Array.isArray(value) ? value[0] : value;
     };
     TaskService.prototype.getPrimaryAssigneeId = function (value) {
         var _a;
-        if (typeof value === 'number') {
+        if (typeof value === 'number')
             return value;
-        }
-        if (Array.isArray(value)) {
+        if (Array.isArray(value))
             return value[0];
-        }
         return (_a = value === null || value === void 0 ? void 0 : value.results) === null || _a === void 0 ? void 0 : _a[0];
     };
     TaskService.prototype.normalizeFieldName = function (value) {

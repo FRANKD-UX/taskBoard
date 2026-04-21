@@ -16,6 +16,11 @@ var TASK_STATUSES = [
     'InProgress',
     'Completed',
 ];
+// Albertsdal is the main office and listed first so it is the default.
+var SITES = [
+    { value: 'Albertsdal', label: 'Albertsdal (Main Office)' },
+    { value: 'Troyville', label: 'Troyville (Secondary Office)' },
+];
 var REQUEST_TYPES = ['Task', 'Incident'];
 var DEPARTMENTS = ['IT', 'Finance', 'Operations', 'Support'];
 var TEMP_ID_PREFIX = 'temp_';
@@ -83,7 +88,7 @@ var labelStyle = {
 };
 var inputStyle = {
     width: '100%',
-    backgroundColor: '#0f172a',
+    backgroundColor: theme_1.THEME.colors.background,
     color: theme_1.THEME.colors.textStrong,
     border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '8px',
@@ -107,6 +112,8 @@ var CreateTaskModal = function (_a) {
         title: '',
         status: defaultStatus,
         priority: 'Medium',
+        // Default to the main office — users at Troyville can change it.
+        site: 'Albertsdal',
         startDate: today,
         dueDate: '',
         description: '',
@@ -151,6 +158,7 @@ var CreateTaskModal = function (_a) {
             title: form.title.trim(),
             status: form.status,
             priority: form.priority,
+            site: form.site,
             startDate: form.startDate,
             dueDate: form.dueDate || undefined,
             description: form.description.trim() || undefined,
@@ -180,7 +188,7 @@ var CreateTaskModal = function (_a) {
                         cursor: 'pointer',
                         lineHeight: 1,
                         padding: '2px 6px',
-                    } }, "x")),
+                    } }, "\u00D7")),
             React.createElement("div", { style: bodyStyle },
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "ctm-title" },
@@ -191,6 +199,9 @@ var CreateTaskModal = function (_a) {
                 canAssign && (React.createElement("div", null,
                     React.createElement("label", { style: labelStyle }, "Assigned To"),
                     React.createElement(PeoplePicker_1.default, { value: assignee, onChange: setAssignee, siteUrl: siteUrl, placeholder: "Search by name or email...", canEdit: true }))),
+                React.createElement("div", null,
+                    React.createElement("label", { style: labelStyle, htmlFor: "ctm-site" }, "Site"),
+                    React.createElement("select", { id: "ctm-site", value: form.site, onChange: function (e) { return handleFieldChange('site', e.target.value); }, style: inputStyle }, SITES.map(function (s) { return (React.createElement("option", { key: s.value, value: s.value }, s.label)); }))),
                 React.createElement("div", { style: gridTwoColumnStyle },
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "ctm-status" }, "Status"),
@@ -208,7 +219,7 @@ var CreateTaskModal = function (_a) {
                             React.createElement("span", { style: {
                                     marginLeft: '6px',
                                     fontSize: '10px',
-                                    color: '#60a5fa',
+                                    color: theme_1.THEME.colors.primary,
                                     textTransform: 'none',
                                     fontWeight: 400,
                                 } }, "(auto)")),
@@ -241,7 +252,7 @@ var CreateTaskModal = function (_a) {
                         padding: '10px 24px',
                         borderRadius: '8px',
                         border: 'none',
-                        backgroundColor: '#2563eb',
+                        backgroundColor: theme_1.THEME.colors.primary,
                         color: '#ffffff',
                         fontSize: '14px',
                         fontWeight: 700,

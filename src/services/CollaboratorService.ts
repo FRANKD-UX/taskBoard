@@ -14,11 +14,10 @@
 //   RespondedAt    - Date/Time    (blank until they respond)
 
 import { getSP } from '../pnpjsConfig';
-import type { ICollaborator, ICollaborationRequest, CollaborationStatus } from './TaskTypes';
+import type { ICollaborator, ICollaborationRequest, CollaborationStatus } from '../webparts/taskBoard/components/TaskTypes';
 
-// ---------------------------------------------------------------------------
-// Internal SP response shape
-// ---------------------------------------------------------------------------
+
+
 
 interface ISPPersonField {
     Id?: number;
@@ -40,9 +39,7 @@ interface ISPCollaboratorItem {
     Collaborator?: ISPPersonField;
 }
 
-// ---------------------------------------------------------------------------
-// Mapping helpers
-// ---------------------------------------------------------------------------
+
 
 const LIST_TITLE = 'TaskCollaborators';
 
@@ -64,17 +61,11 @@ const mapRequestItem = (item: ISPCollaboratorItem): ICollaborationRequest => ({
     respondedAt: item.RespondedAt ?? undefined,
 });
 
-// ---------------------------------------------------------------------------
-// CollaboratorService
-// ---------------------------------------------------------------------------
+
 
 export class CollaboratorService {
 
-    // -----------------------------------------------------------------------
-    // Fetch all collaboration requests for a given task.
-    // Returns them sorted newest-first so the UI always shows the latest
-    // request at the top.
-    // -----------------------------------------------------------------------
+
 
     public async getRequestsForTask(taskId: number): Promise<ICollaborationRequest[]> {
         const sp = getSP();
@@ -112,10 +103,7 @@ export class CollaboratorService {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Fetch only the ACCEPTED collaborators for a task.
-    // This is what the task card and "In Collaboration With" field use.
-    // -----------------------------------------------------------------------
+
 
     public async getAcceptedCollaborators(taskId: number): Promise<ICollaborator[]> {
         const requests = await this.getRequestsForTask(taskId);
@@ -124,12 +112,6 @@ export class CollaboratorService {
             .map((r) => r.collaborator);
     }
 
-    // -----------------------------------------------------------------------
-    // Create a new Pending collaboration request.
-    //
-    // After this write succeeds, Power Automate picks it up and emails the
-    // invited person with Accept / Decline buttons.
-    // -----------------------------------------------------------------------
 
     public async createRequest(params: {
         taskId: number;
@@ -181,10 +163,7 @@ export class CollaboratorService {
         };
     }
 
-    // -----------------------------------------------------------------------
-    // Fetch a single request by its SP list item ID.
-    // Used internally after createRequest to return a fully populated object.
-    // -----------------------------------------------------------------------
+
 
     public async getRequestById(requestId: number): Promise<ICollaborationRequest | null> {
         const sp = getSP();
@@ -219,11 +198,7 @@ export class CollaboratorService {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Cancel a Pending request.
-    // Only the person who sent the request should be able to do this —
-    // enforce that in the UI, not here, to keep this layer simple.
-    // -----------------------------------------------------------------------
+
 
     public async cancelRequest(requestId: number): Promise<void> {
         const sp = getSP();
@@ -233,10 +208,7 @@ export class CollaboratorService {
             .delete();
     }
 
-    // -----------------------------------------------------------------------
-    // Check whether a pending request already exists between this task
-    // and this collaborator so we do not create duplicates.
-    // -----------------------------------------------------------------------
+
 
     public async pendingRequestExists(taskId: number, collaboratorId: number): Promise<boolean> {
         const sp = getSP();

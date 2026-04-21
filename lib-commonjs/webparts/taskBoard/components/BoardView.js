@@ -13,6 +13,8 @@ var boardStyle = {
     padding: '12px 8px 16px 8px',
     scrollBehavior: 'smooth',
     backgroundColor: theme_1.THEME.colors.background,
+    // Ensure the board is the positioning reference for the drag preview
+    position: 'relative',
 };
 var columnStyle = {
     width: 'clamp(248px, 24vw, 320px)',
@@ -81,55 +83,147 @@ var BoardView = function (_a) {
         return function () { return cancelAnimationFrame(frame); };
     }, [enteringTaskIds]);
     return (React.createElement("div", { style: { width: '100%', backgroundColor: theme_1.THEME.colors.background } },
-        React.createElement("div", { style: boardStyle }, statuses.map(function (status) { return (React.createElement(react_beautiful_dnd_1.Droppable, { key: status, droppableId: status }, function (dropProvided, dropSnapshot) { return (React.createElement("div", tslib_1.__assign({ ref: dropProvided.innerRef }, dropProvided.droppableProps, { onMouseEnter: function () { return setHoveredColumn(status); }, onMouseLeave: function () { return setHoveredColumn(null); }, style: tslib_1.__assign(tslib_1.__assign({}, columnStyle), { backgroundColor: dropSnapshot.isDraggingOver
-                    ? '#e2e8f0'
-                    : hoveredColumn === status ? '#f1f5f9' : theme_1.THEME.colors.panel, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '300px', boxShadow: dropSnapshot.isDraggingOver
-                    ? 'inset 0 0 0 1px rgba(59,130,246,0.3)' : '0 1px 3px rgba(0,0,0,0.05)', transition: 'background-color 160ms ease, box-shadow 160ms ease' }) }),
-            React.createElement("div", { style: { height: '6px', borderRadius: '999px', backgroundColor: getStatusColor(status), marginBottom: '2px' } }),
-            React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', color: theme_1.THEME.colors.textPrimary } },
-                    React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getStatusColor(status), display: 'inline-block' } }),
-                    React.createElement("span", null, status)),
-                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                    React.createElement("span", { style: { color: theme_1.THEME.colors.textPrimary, backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '999px', padding: '2px 8px', fontSize: '12px' } }, tasksByStatus[status].length),
-                    React.createElement("button", { type: "button", onClick: function () { return onNewTask(status); }, "aria-label": "New task in ".concat(status), style: { width: '24px', height: '24px', borderRadius: '999px', border: "1px solid ".concat(theme_1.THEME.colors.border), backgroundColor: theme_1.THEME.colors.panel, color: theme_1.THEME.colors.textPrimary, cursor: 'pointer', lineHeight: 1, fontSize: '16px' } }, "+"))),
-            tasksByStatus[status].length === 0 && (React.createElement("div", { style: { color: theme_1.THEME.colors.textSecondary, fontSize: '12px', padding: '8px 2px' } }, "No tasks yet")),
-            tasksByStatus[status].map(function (task, index) { return (React.createElement(react_beautiful_dnd_1.Draggable, { key: task.id, draggableId: task.id, index: index }, function (dragProvided, dragSnapshot) {
-                var isEntering = Boolean(enteringTaskIds[task.id]);
-                var dragStyle = (dragProvided.draggableProps.style || {});
-                var base = typeof dragStyle.transform === 'string' ? dragStyle.transform : '';
-                var transform = dragSnapshot.isDragging
-                    ? "".concat(base, " rotate(2deg) scale(1.03)")
-                    : hoveredTaskId === task.id ? 'scale(1.01)'
-                        : isEntering ? 'scale(0.97) translateY(6px)' : base;
-                var assigneeName = task.assignedTo || 'Unassigned';
-                return (React.createElement("div", tslib_1.__assign({ ref: dragProvided.innerRef }, dragProvided.draggableProps, { style: tslib_1.__assign({ backgroundColor: theme_1.THEME.colors.panel, borderRadius: '10px', padding: '14px', borderLeft: "4px solid ".concat(getStatusColor(status)), border: '1px solid #e2e8f0', color: theme_1.THEME.colors.textPrimary, display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'default', backgroundImage: 'none', transform: transform || 'scale(1)', opacity: isEntering ? 0 : 1, boxShadow: dragSnapshot.isDragging || hoveredTaskId === task.id
-                            ? '0 10px 20px rgba(0,0,0,0.1),0 0 0 1px rgba(59,130,246,0.3)'
-                            : '0 2px 6px rgba(0,0,0,0.05)', transition: "".concat(typeof dragStyle.transition === 'string' ? dragStyle.transition : 'transform 180ms ease', ",box-shadow 160ms ease,opacity 180ms ease") }, dragStyle) }),
+        React.createElement("div", { style: boardStyle }, statuses.map(function (status) { return (React.createElement(react_beautiful_dnd_1.Droppable, { key: status, droppableId: status }, function (dropProvided, dropSnapshot) {
+            // Remove transition during drag to prevent column shifting
+            var columnTransition = dropSnapshot.isDraggingOver
+                ? 'none'
+                : 'background-color 160ms ease, box-shadow 160ms ease';
+            var isEmpty = tasksByStatus[status].length === 0;
+            return (React.createElement("div", tslib_1.__assign({ ref: dropProvided.innerRef }, dropProvided.droppableProps, { onMouseEnter: function () { return setHoveredColumn(status); }, onMouseLeave: function () { return setHoveredColumn(null); }, style: tslib_1.__assign(tslib_1.__assign({}, columnStyle), { backgroundColor: dropSnapshot.isDraggingOver
+                        ? '#e2e8f0'
+                        : hoveredColumn === status
+                            ? '#f1f5f9'
+                            : theme_1.THEME.colors.panel, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '300px', boxShadow: dropSnapshot.isDraggingOver
+                        ? 'inset 0 0 0 1px rgba(59,130,246,0.3)'
+                        : '0 1px 3px rgba(0,0,0,0.05)', transition: columnTransition }) }),
+                React.createElement("div", { style: {
+                        height: '6px',
+                        borderRadius: '999px',
+                        backgroundColor: getStatusColor(status),
+                        marginBottom: '2px',
+                    } }),
+                React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+                    React.createElement("div", { style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            color: theme_1.THEME.colors.textPrimary,
+                        } },
+                        React.createElement("span", { style: {
+                                width: '10px',
+                                height: '10px',
+                                borderRadius: '50%',
+                                backgroundColor: getStatusColor(status),
+                                display: 'inline-block',
+                            } }),
+                        React.createElement("span", null, status)),
                     React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                        React.createElement("div", tslib_1.__assign({}, dragProvided.dragHandleProps, { style: {
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: '20px',
-                                height: '20px',
-                                cursor: 'grab',
-                                color: theme_1.THEME.colors.textSecondary,
+                        React.createElement("span", { style: {
+                                color: theme_1.THEME.colors.textPrimary,
+                                backgroundColor: theme_1.THEME.colors.panel,
+                                border: "1px solid ".concat(theme_1.THEME.colors.border),
+                                borderRadius: '999px',
+                                padding: '2px 8px',
+                                fontSize: '12px',
+                            } }, tasksByStatus[status].length),
+                        React.createElement("button", { type: "button", onClick: function () { return onNewTask(status); }, "aria-label": "New task in ".concat(status), style: {
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '999px',
+                                border: "1px solid ".concat(theme_1.THEME.colors.border),
+                                backgroundColor: theme_1.THEME.colors.panel,
+                                color: theme_1.THEME.colors.textPrimary,
+                                cursor: 'pointer',
+                                lineHeight: 1,
                                 fontSize: '16px',
-                                userSelect: 'none',
-                                flexShrink: 0,
-                            }, onMouseDown: function (e) { return e.stopPropagation(); } }), "\u2630"),
-                        React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: { flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', cursor: 'pointer' } },
-                            React.createElement("div", { style: { fontWeight: 700 } }, task.title || 'New Task'),
-                            React.createElement("span", { style: { backgroundColor: getStatusColor(status), color: '#ffffff', borderRadius: '999px', padding: '2px 8px', fontSize: '11px', fontWeight: 600 } }, status))),
-                    React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: { display: 'flex', alignItems: 'center', gap: '8px', color: theme_1.THEME.colors.textPrimary, fontSize: '12px', cursor: 'pointer' } },
-                        React.createElement("div", { style: { width: '26px', height: '26px', borderRadius: '50%', backgroundColor: getAvatarColor(assigneeName), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 600 } }, getInitials(assigneeName)),
-                        React.createElement("span", null, assigneeName)),
-                    React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', cursor: 'pointer' } },
-                        React.createElement("span", { style: { color: theme_1.THEME.colors.textSecondary } }, formatDisplayDate(task.dueDate)),
-                        React.createElement("span", { style: { backgroundColor: getPriorityColor(task.priority), color: '#0f172a', borderRadius: '999px', padding: '2px 8px', fontWeight: 600 } }, task.priority))));
-            })); }),
-            dropProvided.placeholder)); })); }))));
+                            } }, "+"))),
+                React.createElement("div", { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' } },
+                    isEmpty && (React.createElement("div", { style: { color: theme_1.THEME.colors.textSecondary, fontSize: '12px', padding: '8px 2px' } }, "No tasks yet")),
+                    tasksByStatus[status].map(function (task, index) { return (React.createElement(react_beautiful_dnd_1.Draggable, { key: task.id, draggableId: task.id, index: index }, function (dragProvided, dragSnapshot) {
+                        var isEntering = Boolean(enteringTaskIds[task.id]);
+                        var baseStyle = dragProvided.draggableProps.style;
+                        // CRITICAL: Force no transition on transform while dragging
+                        var dragStyle = dragSnapshot.isDragging
+                            ? tslib_1.__assign(tslib_1.__assign({}, baseStyle), { transition: 'none', willChange: 'transform', userSelect: 'none', pointerEvents: 'none', backgroundColor: theme_1.THEME.colors.panel, borderRadius: '10px', padding: '14px', borderLeft: "4px solid ".concat(getStatusColor(status)), border: '1px solid #e2e8f0', color: theme_1.THEME.colors.textPrimary, display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'grabbing', opacity: 1, boxShadow: '0 10px 20px rgba(0,0,0,0.15),0 0 0 1px rgba(59,130,246,0.5)', transform: baseStyle.transform }) : tslib_1.__assign(tslib_1.__assign({}, baseStyle), { backgroundColor: theme_1.THEME.colors.panel, borderRadius: '10px', padding: '14px', borderLeft: "4px solid ".concat(getStatusColor(status)), border: '1px solid #e2e8f0', color: theme_1.THEME.colors.textPrimary, display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'default', opacity: isEntering ? 0 : 1, userSelect: 'none', boxShadow: hoveredTaskId === task.id
+                                ? '0 10px 20px rgba(0,0,0,0.1),0 0 0 1px rgba(59,130,246,0.3)'
+                                : '0 2px 6px rgba(0,0,0,0.05)', transition: (baseStyle === null || baseStyle === void 0 ? void 0 : baseStyle.transition)
+                                ? "".concat(baseStyle.transition, ", box-shadow 160ms ease, opacity 180ms ease")
+                                : 'box-shadow 160ms ease, opacity 180ms ease' });
+                        var assigneeName = task.assignedTo || 'Unassigned';
+                        return (React.createElement("div", tslib_1.__assign({ ref: dragProvided.innerRef }, dragProvided.draggableProps, { style: dragStyle }),
+                            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                                React.createElement("div", tslib_1.__assign({}, dragProvided.dragHandleProps, { style: {
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '20px',
+                                        height: '20px',
+                                        cursor: 'grab',
+                                        color: theme_1.THEME.colors.textSecondary,
+                                        fontSize: '16px',
+                                        userSelect: 'none',
+                                        flexShrink: 0,
+                                    }, onMouseDown: function (e) { return e.stopPropagation(); } }), "\u2630"),
+                                React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: {
+                                        flex: 1,
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: 'pointer',
+                                    } },
+                                    React.createElement("div", { style: { fontWeight: 700 } }, task.title || 'New Task'),
+                                    React.createElement("span", { style: {
+                                            backgroundColor: getStatusColor(status),
+                                            color: '#ffffff',
+                                            borderRadius: '999px',
+                                            padding: '2px 8px',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                        } }, status))),
+                            React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: {
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    color: theme_1.THEME.colors.textPrimary,
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                } },
+                                React.createElement("div", { style: {
+                                        width: '26px',
+                                        height: '26px',
+                                        borderRadius: '50%',
+                                        backgroundColor: getAvatarColor(assigneeName),
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#ffffff',
+                                        fontWeight: 600,
+                                    } }, getInitials(assigneeName)),
+                                React.createElement("span", null, assigneeName)),
+                            React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: {
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                } },
+                                React.createElement("span", { style: { color: theme_1.THEME.colors.textSecondary } }, formatDisplayDate(task.dueDate)),
+                                React.createElement("span", { style: {
+                                        backgroundColor: getPriorityColor(task.priority),
+                                        color: '#0f172a',
+                                        borderRadius: '999px',
+                                        padding: '2px 8px',
+                                        fontWeight: 600,
+                                    } }, task.priority))));
+                    })); }),
+                    React.createElement("div", { style: {
+                            display: dropSnapshot.isDraggingOver && isEmpty ? 'block' : 'none',
+                            minHeight: '80px',
+                            width: '100%',
+                        } }, dropProvided.placeholder),
+                    !isEmpty && dropProvided.placeholder)));
+        })); }))));
 };
 exports.default = BoardView;
 //# sourceMappingURL=BoardView.js.map

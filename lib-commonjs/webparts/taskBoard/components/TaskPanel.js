@@ -6,7 +6,18 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
+var CollaborationPanel_1 = tslib_1.__importDefault(require("./CollaborationPanel"));
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+// Albertsdal is listed first so it appears at the top of the dropdown.
+var SITES = [
+    { value: 'Albertsdal', label: 'Albertsdal (Main Office)' },
+    { value: 'Troyville', label: 'Troyville (Secondary Office)' },
+];
+// ---------------------------------------------------------------------------
 // Styles
+// ---------------------------------------------------------------------------
 var panelStyle = {
     position: 'fixed',
     top: 0,
@@ -53,7 +64,7 @@ var labelStyle = {
     letterSpacing: '0.3px',
 };
 var inputStyle = {
-    backgroundColor: '#0f172a',
+    backgroundColor: theme_1.THEME.colors.background,
     color: theme_1.THEME.colors.textStrong,
     border: "1px solid ".concat(theme_1.THEME.colors.border),
     borderRadius: '8px',
@@ -71,8 +82,8 @@ var primaryButtonStyle = {
     fontWeight: 600,
     fontSize: '14px',
     cursor: 'pointer',
-    backgroundColor: '#2563eb',
-    color: 'white',
+    backgroundColor: theme_1.THEME.colors.primary,
+    color: '#ffffff',
     transition: 'background-color 0.15s, opacity 0.15s',
 };
 var dangerButtonStyle = {
@@ -83,15 +94,16 @@ var dangerButtonStyle = {
     fontSize: '14px',
     cursor: 'pointer',
     backgroundColor: '#ef4444',
-    color: 'white',
+    color: '#ffffff',
     transition: 'background-color 0.15s, opacity 0.15s',
 };
-// Helper
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
 var buildResolvedUserFromTask = function (task) {
     var _a, _b, _c, _d, _e;
-    if (!task.assignedTo && !task.assignedToEmail) {
+    if (!task.assignedTo && !task.assignedToEmail)
         return null;
-    }
     return {
         id: (_a = task.assignedToId) !== null && _a !== void 0 ? _a : null,
         name: (_b = task.assignedTo) !== null && _b !== void 0 ? _b : '',
@@ -99,14 +111,25 @@ var buildResolvedUserFromTask = function (task) {
         loginName: (_e = task.assignedToLoginName) !== null && _e !== void 0 ? _e : '',
     };
 };
+// Converts the string task id to a numeric SP item ID.
+// Returns null for unsaved tasks (temp_ prefix).
+var toTaskSpId = function (id) {
+    if (!id || id.startsWith('temp_'))
+        return null;
+    var parsed = Number(id);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+// ---------------------------------------------------------------------------
 // Component
+// ---------------------------------------------------------------------------
 var TaskPanel = function (_a) {
-    var _b, _c, _d, _e, _f, _g, _h, _j;
-    var selectedTask = _a.selectedTask, updateTask = _a.updateTask, saveTask = _a.saveTask, deleteTask = _a.deleteTask, onClose = _a.onClose, canAssign = _a.canAssign, context = _a.context, currentUserName = _a.currentUserName;
-    var _k = (0, react_1.useState)(false), isSaving = _k[0], setIsSaving = _k[1];
-    var _l = (0, react_1.useState)(null), saveError = _l[0], setSaveError = _l[1];
+    var _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var selectedTask = _a.selectedTask, updateTask = _a.updateTask, saveTask = _a.saveTask, deleteTask = _a.deleteTask, onClose = _a.onClose, canAssign = _a.canAssign, context = _a.context, currentUserName = _a.currentUserName, currentUserSpId = _a.currentUserSpId;
+    var _l = (0, react_1.useState)(false), isSaving = _l[0], setIsSaving = _l[1];
+    var _m = (0, react_1.useState)(null), saveError = _m[0], setSaveError = _m[1];
     var panelRef = (0, react_1.useRef)(null);
     var siteUrl = (_d = (_c = (_b = context === null || context === void 0 ? void 0 : context.pageContext) === null || _b === void 0 ? void 0 : _b.web) === null || _c === void 0 ? void 0 : _c.absoluteUrl) !== null && _d !== void 0 ? _d : (typeof window !== 'undefined' ? window.location.origin : '');
+    // Clear the error banner whenever a different task is opened.
     (0, react_1.useEffect)(function () {
         setSaveError(null);
     }, [selectedTask === null || selectedTask === void 0 ? void 0 : selectedTask.id]);
@@ -179,6 +202,7 @@ var TaskPanel = function (_a) {
         onClose();
     };
     var resolvedAssignee = buildResolvedUserFromTask(selectedTask);
+    var taskSpId = toTaskSpId(selectedTask.id);
     return (React.createElement(React.Fragment, null,
         React.createElement("div", { style: overlayStyle, onClick: onClose }),
         React.createElement("div", { ref: panelRef, style: panelStyle },
@@ -192,7 +216,7 @@ var TaskPanel = function (_a) {
                         cursor: 'pointer',
                         padding: 0,
                         lineHeight: 1,
-                    } }, "x")),
+                    } }, "\u00D7")),
             React.createElement("div", { style: sectionStyle },
                 React.createElement("label", { style: labelStyle }, "Title"),
                 React.createElement("input", { type: "text", value: selectedTask.title, onChange: function (e) { return handleUpdate({ title: e.target.value }); }, style: inputStyle, placeholder: "Task title" })),
@@ -200,13 +224,16 @@ var TaskPanel = function (_a) {
                 React.createElement("label", { style: labelStyle }, "Assigned To"),
                 React.createElement(PeoplePicker_1.default, { value: resolvedAssignee, onChange: handleAssigneeChange, siteUrl: siteUrl, placeholder: "Search by name or email...", canEdit: canAssign })),
             React.createElement("div", { style: sectionStyle },
+                React.createElement("label", { style: labelStyle }, "Site"),
+                React.createElement("select", { value: (_e = selectedTask.site) !== null && _e !== void 0 ? _e : 'Albertsdal', onChange: function (e) { return handleUpdate({ site: e.target.value }); }, style: inputStyle }, SITES.map(function (s) { return (React.createElement("option", { key: s.value, value: s.value }, s.label)); }))),
+            React.createElement("div", { style: sectionStyle },
                 React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' } },
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle }, "Start Date"),
-                        React.createElement("input", { type: "date", value: (_f = (_e = selectedTask.startDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', onChange: function (e) { return handleUpdate({ startDate: e.target.value }); }, style: inputStyle })),
+                        React.createElement("input", { type: "date", value: (_g = (_f = selectedTask.startDate) === null || _f === void 0 ? void 0 : _f.split('T')[0]) !== null && _g !== void 0 ? _g : '', onChange: function (e) { return handleUpdate({ startDate: e.target.value }); }, style: inputStyle })),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle }, "Due Date"),
-                        React.createElement("input", { type: "date", value: (_h = (_g = selectedTask.dueDate) === null || _g === void 0 ? void 0 : _g.split('T')[0]) !== null && _h !== void 0 ? _h : '', onChange: function (e) { return handleUpdate({ dueDate: e.target.value }); }, style: inputStyle })))),
+                        React.createElement("input", { type: "date", value: (_j = (_h = selectedTask.dueDate) === null || _h === void 0 ? void 0 : _h.split('T')[0]) !== null && _j !== void 0 ? _j : '', onChange: function (e) { return handleUpdate({ dueDate: e.target.value }); }, style: inputStyle })))),
             React.createElement("div", { style: sectionStyle },
                 React.createElement("label", { style: labelStyle }, "Priority"),
                 React.createElement("select", { value: selectedTask.priority, onChange: function (e) { return handleUpdate({ priority: e.target.value }); }, style: inputStyle },
@@ -223,10 +250,12 @@ var TaskPanel = function (_a) {
                     React.createElement("option", { value: "Completed" }, "Completed"))),
             React.createElement("div", { style: sectionStyle },
                 React.createElement("label", { style: labelStyle }, "Description"),
-                React.createElement("textarea", { value: (_j = selectedTask.description) !== null && _j !== void 0 ? _j : '', onChange: function (e) { return handleUpdate({ description: e.target.value }); }, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { minHeight: '100px', resize: 'vertical' }), placeholder: "Add a description..." })),
+                React.createElement("textarea", { value: (_k = selectedTask.description) !== null && _k !== void 0 ? _k : '', onChange: function (e) { return handleUpdate({ description: e.target.value }); }, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { minHeight: '100px', resize: 'vertical' }), placeholder: "Add a description..." })),
             React.createElement("div", { style: sectionStyle },
                 React.createElement("label", { style: labelStyle }, "Created By"),
                 React.createElement("div", { style: { fontSize: '14px', color: theme_1.THEME.colors.textStrong } }, selectedTask.createdBy || currentUserName || 'Unknown')),
+            React.createElement("div", { style: { padding: '16px 20px' } },
+                React.createElement(CollaborationPanel_1.default, { taskSpId: taskSpId, taskTitle: selectedTask.title, currentUserSpId: currentUserSpId, siteUrl: siteUrl })),
             saveError && (React.createElement("div", { style: {
                     padding: '12px 20px',
                     backgroundColor: 'rgba(239, 68, 68, 0.1)',

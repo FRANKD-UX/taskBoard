@@ -22,6 +22,12 @@ export type TaskDepartment =
     | 'Support'
     | 'Operations';
 
+// The two physical office locations the company operates from.
+// Albertsdal is the main office; Troyville is the secondary office.
+export type TaskSite =
+    | 'Albertsdal'
+    | 'Troyville';
+
 // The three states a collaboration request can be in.
 // Pending = waiting for the invited person to respond.
 // Accepted = they said yes — their name shows in "In Collaboration With".
@@ -55,6 +61,10 @@ export interface Task {
     title: string;
     status: TaskStatus;
     priority: TaskPriority;
+
+    // The office site this task originates from.
+    // Defaults to 'Albertsdal' (main office) when not specified.
+    site: TaskSite;
 
     assignedTo?: string;
     assignedToId?: number;
@@ -92,6 +102,7 @@ export interface ITask {
     title: string;
     status: string;
     priority: string;
+    site: string;
 
     assignedTo?: string;
     assignedToId?: number;

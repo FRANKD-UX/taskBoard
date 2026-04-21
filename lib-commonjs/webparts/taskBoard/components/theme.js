@@ -3,24 +3,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.THEME = void 0;
 exports.THEME = {
     colors: {
-        background: '#f8fafc', // very light gray-blue
-        panel: '#ffffff', // pure white cards/panels
-        border: '#e2e8f0', // soft gray border
-        textPrimary: '#1e293b', // dark slate for main text
-        textSecondary: '#64748b', // medium gray for secondary text
-        textStrong: '#0f172a' // almost black for headings
+        background: '#f8fafc',
+        panel: '#ffffff',
+        border: '#e2e8f0',
+        textPrimary: '#1e293b',
+        textSecondary: '#64748b',
+        textStrong: '#0f172a',
+        primary: '#0ea5e9',
+        primaryHover: '#0284c7',
+        primarySoft: '#e0f2fe',
+        surfaceHover: '#f1f5f9',
     },
     statusColors: {
         Unassigned: '#94a3b8',
         Backlog: '#8b5cf6',
         ThisWeek: '#3b82f6',
         InProgress: '#f59e0b',
-        Completed: '#22c55e'
+        Completed: '#22c55e',
     },
     priorityColors: {
         Low: '#22c55e',
         Medium: '#f59e0b',
-        High: '#ef4444'
-    }
+        High: '#ef4444',
+    },
 };
 //# sourceMappingURL=theme.js.map

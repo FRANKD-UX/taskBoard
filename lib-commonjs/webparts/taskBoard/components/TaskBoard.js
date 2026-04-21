@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
+// TaskBoard.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var react_beautiful_dnd_1 = require("react-beautiful-dnd");
@@ -10,10 +11,13 @@ var TableView_1 = tslib_1.__importDefault(require("./TableView"));
 var CalendarView_1 = tslib_1.__importDefault(require("./CalendarView"));
 var ChartView_1 = tslib_1.__importDefault(require("./ChartView"));
 var GanttView_1 = tslib_1.__importDefault(require("./GanttView"));
+var theme_1 = require("./theme");
 var TaskService_1 = require("../../../services/TaskService");
 var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var UserRoleService_1 = require("../../../services/UserRoleService");
+// ---------------------------------------------------------------------------
 // Constants
+// ---------------------------------------------------------------------------
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
 var VIEW_TABS = [
@@ -23,7 +27,9 @@ var VIEW_TABS = [
     { key: 'gantt', label: 'Gantt' },
     { key: 'chart', label: 'Chart' },
 ];
+// ---------------------------------------------------------------------------
 // Pure helpers
+// ---------------------------------------------------------------------------
 var toTaskStatus = function (value) {
     if (value && TASK_STATUSES.indexOf(value) > -1) {
         return value;
@@ -32,7 +38,11 @@ var toTaskStatus = function (value) {
 };
 var getTodayIso = function () {
     var d = new Date();
-    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+    return [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0'),
+    ].join('-');
 };
 var groupTasksByStatus = function (tasks) {
     var grouped = {
@@ -70,6 +80,8 @@ var reorderTasksAfterDrag = function (tasks, result) {
     grouped[dstStatus] = dstTasks;
     return TASK_STATUSES.reduce(function (acc, s) { return acc.concat(grouped[s]); }, []);
 };
+// Resolves a display name / email / loginName to a numeric SharePoint user ID.
+// Tries multiple lookup strategies so we can handle all identity formats SP returns.
 var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, normalizedEmail, normalizedLoginName, tryEnsure, user, _a, claimId, ensuredLoginId, lower, claimId, maybeEmail, user, _b;
     var _c;
@@ -85,9 +97,8 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
                     return tslib_1.__generator(this, function (_e) {
                         switch (_e.label) {
                             case 0:
-                                if (!value) {
+                                if (!value)
                                     return [2 /*return*/, null];
-                                }
                                 _e.label = 1;
                             case 1:
                                 _e.trys.push([1, 3, , 4]);
@@ -138,7 +149,9 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
                     return [2 /*return*/, claimId];
                 _d.label = 9;
             case 9:
-                maybeEmail = lower.indexOf('|') > -1 ? ((_c = normalizedLoginName.split('|').pop()) === null || _c === void 0 ? void 0 : _c.trim()) || '' : '';
+                maybeEmail = lower.indexOf('|') > -1
+                    ? ((_c = normalizedLoginName.split('|').pop()) === null || _c === void 0 ? void 0 : _c.trim()) || ''
+                    : '';
                 if (!maybeEmail) return [3 /*break*/, 13];
                 _d.label = 10;
             case 10:
@@ -156,7 +169,9 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
         }
     });
 }); };
+// ---------------------------------------------------------------------------
 // Component
+// ---------------------------------------------------------------------------
 var TaskBoard = function (_a) {
     var context = _a.context;
     var _b = (0, react_1.useState)([]), tasks = _b[0], setTasks = _b[1];
@@ -166,55 +181,62 @@ var TaskBoard = function (_a) {
     var _f = (0, react_1.useState)(true), isViewVisible = _f[0], setIsViewVisible = _f[1];
     var _g = (0, react_1.useState)(null), hoveredTab = _g[0], setHoveredTab = _g[1];
     var _h = (0, react_1.useState)(false), canAssign = _h[0], setCanAssign = _h[1];
-    var _j = (0, react_1.useState)(false), canAssignAcrossDepartments = _j[0], setCanAssignAcrossDepartments = _j[1];
-    var _k = (0, react_1.useState)(''), currentUserName = _k[0], setCurrentUserName = _k[1];
-    var _l = (0, react_1.useState)(''), currentUserEmail = _l[0], setCurrentUserEmail = _l[1];
+    var _j = (0, react_1.useState)(''), currentUserName = _j[0], setCurrentUserName = _j[1];
+    var _k = (0, react_1.useState)(''), currentUserEmail = _k[0], setCurrentUserEmail = _k[1];
+    // The numeric SharePoint user ID — different from the display name string.
+    // CollaborationPanel needs this to stamp RequestedById on new requests and
+    // to decide which cancel buttons are visible.
+    var _l = (0, react_1.useState)(null), currentUserSpId = _l[0], setCurrentUserSpId = _l[1];
     var _m = (0, react_1.useState)(true), isLoading = _m[0], setIsLoading = _m[1];
     var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
-    // Make the SPFx context available on window so PeoplePicker's
-    // getSPHttpClient() helper can reach it without prop-drilling.
+    // Make the SPFx context available on window so PeoplePicker can reach it.
     (0, react_1.useEffect)(function () {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         window.spfxContext = context;
     }, [context]);
+    // ---------------------------------------------------------------------------
     // Initial data load
+    // ---------------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
         var loadTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
             var sp, user_1, role, roleError_1, data, error_1;
-            return tslib_1.__generator(this, function (_a) {
-                switch (_a.label) {
+            var _a;
+            return tslib_1.__generator(this, function (_b) {
+                switch (_b.label) {
                     case 0:
-                        _a.trys.push([0, 7, 8, 9]);
+                        _b.trys.push([0, 7, 8, 9]);
                         setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
                     case 1:
-                        user_1 = _a.sent();
+                        user_1 = _b.sent();
                         setCurrentUserName(user_1.Title || '');
                         setCurrentUserEmail(user_1.Email || '');
-                        _a.label = 2;
+                        setCurrentUserSpId((_a = user_1.Id) !== null && _a !== void 0 ? _a : null);
+                        _b.label = 2;
                     case 2:
-                        _a.trys.push([2, 4, , 5]);
+                        _b.trys.push([2, 4, , 5]);
                         return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user_1.Email || '')];
                     case 3:
-                        role = _a.sent();
+                        role = _b.sent();
                         setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
-                        setCanAssignAcrossDepartments((role === null || role === void 0 ? void 0 : role.canAssignAcrossDepartments) === true);
                         return [3 /*break*/, 5];
                     case 4:
-                        roleError_1 = _a.sent();
+                        roleError_1 = _b.sent();
                         console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError_1);
                         setCanAssign(false);
-                        setCanAssignAcrossDepartments(false);
                         return [3 /*break*/, 5];
                     case 5: return [4 /*yield*/, taskService.getTasks()];
                     case 6:
-                        data = _a.sent();
+                        data = _b.sent();
                         setTasks(data.map(function (t) { return ({
                             id: t.id.toString(),
                             title: t.title,
                             status: toTaskStatus(t.status),
                             priority: t.priority,
+                            // Fall back to Albertsdal (main office) for tasks that existed
+                            // before the Site column was added to the SharePoint list.
+                            site: t.site || 'Albertsdal',
                             assignedTo: t.assignedTo,
                             assignedToId: t.assignedToId,
                             assignedToEmail: t.assignedToEmail,
@@ -229,7 +251,7 @@ var TaskBoard = function (_a) {
                         }); }));
                         return [3 /*break*/, 9];
                     case 7:
-                        error_1 = _a.sent();
+                        error_1 = _b.sent();
                         console.error('TaskBoard: load failed', error_1);
                         return [3 /*break*/, 9];
                     case 8:
@@ -241,7 +263,9 @@ var TaskBoard = function (_a) {
         }); };
         loadTasks();
     }, [taskService]);
+    // ---------------------------------------------------------------------------
     // View transition fade
+    // ---------------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;
@@ -252,7 +276,9 @@ var TaskBoard = function (_a) {
         }, 120);
         return function () { return clearTimeout(timer); };
     }, [activeView, displayedView]);
+    // ---------------------------------------------------------------------------
     // Drag and drop
+    // ---------------------------------------------------------------------------
     var handleDragEnd = function (result) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var destination, draggableId, newStatus, error_2;
         return tslib_1.__generator(this, function (_a) {
@@ -278,18 +304,12 @@ var TaskBoard = function (_a) {
             }
         });
     }); };
+    // ---------------------------------------------------------------------------
     // Modal triggers
-    /**
-     * Opens the modal for an EXISTING task (card click, calendar click, etc.)
-     */
+    // ---------------------------------------------------------------------------
     var handleTaskClick = function (task) {
         setModalTask(task);
     };
-    /**
-     * Opens the modal in NEW TASK mode.
-     * We build a minimal temp Task so TaskModal gets a properly shaped object.
-     */
-    // Replace the existing handleNewTask function:
     var handleNewTask = function (status) {
         var today = getTodayIso();
         var draft = {
@@ -297,14 +317,14 @@ var TaskBoard = function (_a) {
             title: '',
             status: status,
             priority: 'Medium',
+            // New tasks default to the main office. The user can change this in the modal.
+            site: 'Albertsdal',
             startDate: today,
             dueDate: undefined,
             createdAt: new Date().toISOString(),
             requestType: 'Task',
             department: 'IT',
             description: '',
-            // If this user cannot assign tasks, default the assignee to themselves.
-            // Managers/Owners/TeamLeads leave it blank so they can pick anyone.
             assignedTo: canAssign ? '' : currentUserName,
             assignedToEmail: canAssign ? undefined : currentUserEmail,
             createdBy: currentUserName,
@@ -314,7 +334,9 @@ var TaskBoard = function (_a) {
     var handleCloseModal = function () {
         setModalTask(null);
     };
+    // ---------------------------------------------------------------------------
     // Save — handles both create and update via TaskModal's onSave prop
+    // ---------------------------------------------------------------------------
     var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var isNew, effectiveTask_1, finalAssigneeId, finalAssigneeName, resolved, message, normaliseDate, payload, created, returnedId, refreshed, persisted_1, updated_1, error_3;
         var _a;
@@ -361,6 +383,7 @@ var TaskBoard = function (_a) {
                         title: effectiveTask_1.title,
                         status: effectiveTask_1.status,
                         priority: effectiveTask_1.priority,
+                        site: effectiveTask_1.site || 'Albertsdal',
                         assignedToId: finalAssigneeId,
                         startDate: normaliseDate(effectiveTask_1.startDate) || getTodayIso(),
                         dueDate: normaliseDate(effectiveTask_1.dueDate),
@@ -376,8 +399,7 @@ var TaskBoard = function (_a) {
                         ? created.id.toString()
                         : undefined;
                     if (!!returnedId) return [3 /*break*/, 5];
-                    console.warn('TaskBoard: createTask response did not include an ID — ' +
-                        'item was saved successfully. Reloading task list.', created);
+                    console.warn('TaskBoard: createTask response did not include an ID — item was saved. Reloading.', created);
                     return [4 /*yield*/, taskService.getTasks()];
                 case 4:
                     refreshed = _b.sent();
@@ -386,6 +408,7 @@ var TaskBoard = function (_a) {
                         title: t.title,
                         status: toTaskStatus(t.status),
                         priority: t.priority,
+                        site: t.site || 'Albertsdal',
                         assignedTo: t.assignedTo,
                         assignedToId: t.assignedToId,
                         assignedToEmail: t.assignedToEmail,
@@ -413,15 +436,16 @@ var TaskBoard = function (_a) {
                 case 9:
                     error_3 = _b.sent();
                     console.error('TaskBoard: saveTask failed', error_3);
-                    if (error_3 instanceof Error) {
+                    if (error_3 instanceof Error)
                         throw error_3;
-                    }
                     throw new Error('Could not save task to SharePoint.');
                 case 10: return [2 /*return*/];
             }
         });
     }); };
+    // ---------------------------------------------------------------------------
     // Delete
+    // ---------------------------------------------------------------------------
     var handleDeleteTask = function (id) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var error_4;
         return tslib_1.__generator(this, function (_a) {
@@ -444,7 +468,9 @@ var TaskBoard = function (_a) {
             }
         });
     }); };
-    // TableView still uses the old per-field updateTask signature — keep it
+    // ---------------------------------------------------------------------------
+    // TableView per-field update
+    // ---------------------------------------------------------------------------
     var handleUpdateTask = function (id, updates) {
         if (!canAssign && updates.assignedTo !== undefined) {
             var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
@@ -452,10 +478,18 @@ var TaskBoard = function (_a) {
         }
         setTasks(function (prev) { return prev.map(function (t) { return (t.id === id ? tslib_1.__assign(tslib_1.__assign({}, t), updates) : t); }); });
     };
+    // ---------------------------------------------------------------------------
     // Render helpers
+    // ---------------------------------------------------------------------------
     var renderActiveView = function (view) {
         if (isLoading) {
-            return (React.createElement("div", { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px', color: '#f8fafc' } }, "Loading tasks..."));
+            return (React.createElement("div", { style: {
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    height: '300px',
+                    color: theme_1.THEME.colors.textSecondary,
+                } }, "Loading tasks..."));
         }
         switch (view) {
             case 'board':
@@ -480,26 +514,44 @@ var TaskBoard = function (_a) {
                 return React.createElement(React.Fragment, null);
         }
     };
+    // ---------------------------------------------------------------------------
     // Render
+    // ---------------------------------------------------------------------------
     return (React.createElement(react_beautiful_dnd_1.DragDropContext, { onDragEnd: handleDragEnd },
-        React.createElement("div", { style: { width: '100%', backgroundColor: '#171c33' } },
-            React.createElement("div", { style: { display: 'flex', gap: '8px', padding: '12px 16px 0 16px' } }, VIEW_TABS.map(function (tab) { return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
-                    backgroundColor: activeView === tab.key ? '#334155' : hoveredTab === tab.key ? '#27324f' : '#1f2a44',
-                    color: activeView === tab.key ? '#f8fafc' : '#e2e8f0',
-                    border: '1px solid #475569',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    fontWeight: activeView === tab.key ? 700 : 500,
-                    transition: 'background-color 160ms ease, color 160ms ease, transform 120ms ease',
-                    transform: hoveredTab === tab.key ? 'translateY(-1px)' : 'translateY(0)',
-                } }, tab.label)); })),
+        React.createElement("div", { style: { width: '100%', backgroundColor: theme_1.THEME.colors.background } },
+            React.createElement("div", { style: {
+                    display: 'flex',
+                    gap: '4px',
+                    padding: '12px 16px 0 16px',
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+                } }, VIEW_TABS.map(function (tab) {
+                var isActive = activeView === tab.key;
+                var isHovered = hoveredTab === tab.key;
+                return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
+                        backgroundColor: isActive
+                            ? theme_1.THEME.colors.primary
+                            : isHovered
+                                ? theme_1.THEME.colors.primarySoft
+                                : 'transparent',
+                        color: isActive ? '#ffffff' : theme_1.THEME.colors.textPrimary,
+                        border: isActive
+                            ? "1px solid ".concat(theme_1.THEME.colors.primary)
+                            : '1px solid transparent',
+                        borderRadius: '8px',
+                        padding: '8px 14px',
+                        cursor: 'pointer',
+                        fontWeight: isActive ? 700 : 500,
+                        fontSize: '14px',
+                        transition: 'background-color 160ms ease, color 160ms ease',
+                    } }, tab.label));
+            })),
             React.createElement("div", { style: {
                     transition: 'opacity 180ms ease, transform 180ms ease',
                     opacity: isViewVisible ? 1 : 0,
                     transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
                 } }, renderActiveView(displayedView))),
-        React.createElement(TaskModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: context.pageContext.web.absoluteUrl, currentUserName: currentUserName, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
+        React.createElement(TaskModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: context.pageContext.web.absoluteUrl, currentUserName: currentUserName, currentUserSpId: currentUserSpId, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
 };
 exports.default = TaskBoard;
 //# sourceMappingURL=TaskBoard.js.map

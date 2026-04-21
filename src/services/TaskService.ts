@@ -7,6 +7,8 @@ export interface ITask {
     title: string;
     status: string;
     priority: string;
+    // The office site this task belongs to.
+    site: string;
     assignedTo?: string;
     assignedToId?: number | null;
     assignedToEmail?: string;
@@ -36,7 +38,7 @@ const ASSIGNEE_FIELD_CANDIDATES = [
     'AssignedTo',
     'Assigned To',
     'AssignedUser',
-    'Assigned User'
+    'Assigned User',
 ];
 
 export class TaskService {
@@ -48,6 +50,7 @@ export class TaskService {
         const listTitle = await this.getTaskListTitle();
         const assigneeField = await this.getAssigneeFieldConfig();
         const assigneeLookupField = `${assigneeField.internalName}Id`;
+
         const mapItem = (item: any): ITask => {
             const assignee = this.getPrimaryAssignee(item[assigneeField.internalName] ?? item.AssignedTo);
             const fallbackAssigneeId = this.getPrimaryAssigneeId(item[assigneeLookupField] ?? item.AssignedToId);
@@ -57,6 +60,9 @@ export class TaskService {
                 title: item.Title || '',
                 status: item.Status || 'Unassigned',
                 priority: item.Priority || 'Medium',
+                // Default to Albertsdal (main office) when the field is blank —
+                // this covers tasks created before Site was added to the list.
+                site: item.Site || 'Albertsdal',
                 assignedTo: assignee?.Title,
                 assignedToId: assignee?.Id ?? fallbackAssigneeId ?? null,
                 assignedToEmail: assignee?.Email ?? assignee?.EMail,
@@ -65,7 +71,7 @@ export class TaskService {
                 dueDate: item.DueDate,
                 description: item.Description,
                 requestType: item.RequestType || 'Task',
-                department: item.Department || 'IT'
+                department: item.Department || 'IT',
             };
         };
 
@@ -77,6 +83,7 @@ export class TaskService {
                     'Title',
                     'Status',
                     'Priority',
+                    'Site',
                     'StartDate',
                     'DueDate',
                     'Description',
@@ -103,6 +110,7 @@ export class TaskService {
                         'Title',
                         'Status',
                         'Priority',
+                        'Site',
                         'StartDate',
                         'DueDate',
                         'Description',
@@ -137,11 +145,12 @@ export class TaskService {
             Title: task.title,
             Status: task.status,
             Priority: task.priority,
+            Site: task.site,
             StartDate: this.validateDate(task.startDate),
             DueDate: this.validateDate(task.dueDate),
             Description: task.description,
             RequestType: task.requestType,
-            Department: task.department
+            Department: task.department,
         };
 
         const assigneeField = await this.getAssigneeFieldConfig();
@@ -153,7 +162,7 @@ export class TaskService {
 
         // PnP v2 returns { data: { Id, ... }, item }
         // PnP v3 returns { data: { Id, ID, id, ... } } depending on SP version
-        // We cast to any and walk every known key to be safe.
+        // We walk every known key shape to be safe.
         const raw = result as any;
 
         const createdId: number | undefined =
@@ -181,11 +190,12 @@ export class TaskService {
             Title: updates.title,
             Status: updates.status,
             Priority: updates.priority,
+            Site: updates.site,
             StartDate: this.validateDate(updates.startDate),
             DueDate: this.validateDate(updates.dueDate),
             Description: updates.description,
             RequestType: updates.requestType,
-            Department: updates.department
+            Department: updates.department,
         };
 
         const assigneeField = await this.getAssigneeFieldConfig();
@@ -201,6 +211,10 @@ export class TaskService {
         const listTitle = await this.getTaskListTitle();
         await sp.web.lists.getByTitle(listTitle).items.getById(id).delete();
     }
+
+    // ---------------------------------------------------------------------------
+    // Private helpers
+    // ---------------------------------------------------------------------------
 
     private validateDate(date?: string): string | null {
         if (!date) return null;
@@ -220,7 +234,6 @@ export class TaskService {
         if (!this.listTitlePromise) {
             this.listTitlePromise = this.resolveTaskListTitle();
         }
-
         return this.listTitlePromise;
     }
 
@@ -232,7 +245,7 @@ export class TaskService {
                 await sp.web.lists.getByTitle(listTitle).select('Id')();
                 return listTitle;
             } catch {
-                // Try the next candidate list title.
+                // Try the next candidate.
             }
         }
 
@@ -243,7 +256,6 @@ export class TaskService {
         if (!this.assigneeFieldConfigPromise) {
             this.assigneeFieldConfigPromise = this.loadAssigneeFieldConfig();
         }
-
         return this.assigneeFieldConfigPromise;
     }
 
@@ -255,13 +267,8 @@ export class TaskService {
             .fields.select('InternalName', 'Title', 'TypeAsString', 'AllowMultipleValues')();
 
         const field = fields.find((candidate: any) => {
-            if (!candidate?.InternalName) {
-                return false;
-            }
-
-            if (candidate.TypeAsString !== 'User' && candidate.TypeAsString !== 'UserMulti') {
-                return false;
-            }
+            if (!candidate?.InternalName) return false;
+            if (candidate.TypeAsString !== 'User' && candidate.TypeAsString !== 'UserMulti') return false;
 
             const normalizedInternalName = this.normalizeFieldName(candidate.InternalName);
             const normalizedTitle = this.normalizeFieldName(candidate.Title);
@@ -278,7 +285,7 @@ export class TaskService {
 
         return {
             internalName: field.InternalName,
-            isMulti: (field as any).AllowMultipleValues === true || field.TypeAsString === 'UserMulti'
+            isMulti: (field as any).AllowMultipleValues === true || field.TypeAsString === 'UserMulti',
         };
     }
 
@@ -299,28 +306,17 @@ export class TaskService {
             return;
         }
 
-        payload[`${fieldName}Id`] = {
-            results: [assignedToId]
-        };
+        payload[`${fieldName}Id`] = { results: [assignedToId] };
     }
 
     private getPrimaryAssignee(value: ISPUserValue | ISPUserValue[] | undefined): ISPUserValue | undefined {
-        if (!value) {
-            return undefined;
-        }
-
+        if (!value) return undefined;
         return Array.isArray(value) ? value[0] : value;
     }
 
     private getPrimaryAssigneeId(value: number | number[] | { results?: number[] } | undefined): number | undefined {
-        if (typeof value === 'number') {
-            return value;
-        }
-
-        if (Array.isArray(value)) {
-            return value[0];
-        }
-
+        if (typeof value === 'number') return value;
+        if (Array.isArray(value)) return value[0];
         return value?.results?.[0];
     }
 
