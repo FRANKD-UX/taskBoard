@@ -4,45 +4,76 @@
 // Owns all reads and writes against the TaskCollaborators SharePoint list.
 // Nothing in this file knows about React — it is pure data access logic.
 //
-// The TaskCollaborators list schema (create this in SharePoint):
-//   Title          - Single line  (label, e.g. "Task 42 - John Smith")
-//   TaskId         - Number       (SP item ID of the task)
-//   TaskTitle      - Single line  (denormalised task title for emails)
-//   RequestedBy    - Person
-//   Collaborator   - Person
-//   Status         - Choice       (Pending | Accepted | Declined), default Pending
-//   RequestedAt    - Date/Time
-//   RespondedAt    - Date/Time    (blank until they respond)
+// Confirmed SP column types on TaskCollaborators (do not change these):
+//   RequestedBy  → User      (single-value) → write as plain number on RequestedById
+//   Collaborator → UserMulti (multi-value)  → write as { results: [id] } on CollaboratorId
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CollaboratorService = void 0;
 var tslib_1 = require("tslib");
 var pnpjsConfig_1 = require("../pnpjsConfig");
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 var LIST_TITLE = 'TaskCollaborators';
+var COLLABORATOR_FIELD_CANDIDATES = ['Collaborator', 'Collaborators'];
+var REQUESTED_BY_FIELD_CANDIDATES = ['RequestedBy', 'Requested By', 'RequestedById'];
+// ---------------------------------------------------------------------------
+// Private pure helpers
+// ---------------------------------------------------------------------------
+var normalizeFieldName = function (value) {
+    return (value !== null && value !== void 0 ? value : '')
+        .replace(/_x0020_/gi, '')
+        .replace(/\s+/g, '')
+        .toLowerCase();
+};
 var mapPersonField = function (field) {
     var _a, _b, _c, _d, _e;
     return ({
         id: (_a = field === null || field === void 0 ? void 0 : field.Id) !== null && _a !== void 0 ? _a : null,
         name: (_b = field === null || field === void 0 ? void 0 : field.Title) !== null && _b !== void 0 ? _b : '',
         email: (_d = (_c = field === null || field === void 0 ? void 0 : field.EMail) !== null && _c !== void 0 ? _c : field === null || field === void 0 ? void 0 : field.Email) !== null && _d !== void 0 ? _d : '',
-        loginName: (_e = field === null || field === void 0 ? void 0 : field.LoginName) !== null && _e !== void 0 ? _e : '',
+        loginName: (_e = field === null || field === void 0 ? void 0 : field.Title) !== null && _e !== void 0 ? _e : '',
     });
 };
 var mapRequestItem = function (item) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d;
     return ({
         requestId: item.Id,
-        taskId: (_a = item.TaskId) !== null && _a !== void 0 ? _a : 0,
-        taskTitle: (_b = item.TaskTitle) !== null && _b !== void 0 ? _b : '',
+        taskId: item.TaskId ? parseInt(item.TaskId, 10) : 0,
+        taskTitle: (_a = item.TaskTitle) !== null && _a !== void 0 ? _a : '',
         collaborator: mapPersonField(item.Collaborator),
         requestedBy: mapPersonField(item.RequestedBy),
-        status: ((_c = item.Status) !== null && _c !== void 0 ? _c : 'Pending'),
-        requestedAt: (_d = item.RequestedAt) !== null && _d !== void 0 ? _d : '',
-        respondedAt: (_e = item.RespondedAt) !== null && _e !== void 0 ? _e : undefined,
+        status: ((_b = item.Status) !== null && _b !== void 0 ? _b : 'Pending'),
+        requestedAt: (_c = item.RequestedAt) !== null && _c !== void 0 ? _c : '',
+        respondedAt: (_d = item.RespondedAt) !== null && _d !== void 0 ? _d : undefined,
     });
 };
+var generateGuid = function () {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = (Math.random() * 16) | 0;
+        var v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+};
+// Builds the correct write value for a Person field based on its actual SP type.
+// UserMulti fields require { results: [id] }.
+// Single-value User fields require a plain number on the Id-suffix field.
+// Getting this wrong in either direction causes a 400 Bad Request.
+var buildPersonPayload = function (userId, isMulti) {
+    return isMulti ? [userId] : userId;
+};
+// ---------------------------------------------------------------------------
+// CollaboratorServiceNew collaboration request: TitleYou have been added as a collaborator on a task.
+// ---------------------------------------------------------------------------
 var CollaboratorService = /** @class */ (function () {
     function CollaboratorService() {
     }
+    // ---------------------------------------------------------------------------
+    // Public API
+    // ---------------------------------------------------------------------------
     CollaboratorService.prototype.getRequestsForTask = function (taskId) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
             var sp, items, error_1;
@@ -56,9 +87,9 @@ var CollaboratorService = /** @class */ (function () {
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(LIST_TITLE)
                                 .items
-                                .select('Id', 'Title', 'TaskId', 'TaskTitle', 'Status', 'RequestedAt', 'RespondedAt', 'RequestedBy/Id', 'RequestedBy/Title', 'RequestedBy/EMail', 'RequestedBy/LoginName', 'Collaborator/Id', 'Collaborator/Title', 'Collaborator/EMail', 'Collaborator/LoginName')
+                                .select('Id', 'Title', 'TaskId', 'TaskTitle', 'Status', 'RequestedAt', 'RespondedAt', 'ResponseToken', 'RequestedBy/Id', 'RequestedBy/Title', 'RequestedBy/EMail', 'Collaborator/Id', 'Collaborator/Title', 'Collaborator/EMail')
                                 .expand('RequestedBy', 'Collaborator')
-                                .filter("TaskId eq ".concat(taskId))
+                                .filter("TaskId eq '".concat(taskId, "'"))
                                 .orderBy('RequestedAt', false)
                                 .top(100)()];
                     case 2:
@@ -90,49 +121,82 @@ var CollaboratorService = /** @class */ (function () {
     };
     CollaboratorService.prototype.createRequest = function (params) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, taskId, taskTitle, collaboratorId, requestedById, payload, result, raw, createdId, created;
-            var _a, _b, _c, _d, _e, _f;
+            var taskId, taskTitle, collaboratorId, requestedById, siteAbsoluteUrl, fieldNames, responseToken, todayIso, payload, listApiUrl, contextInfoUrl, digestResponse, digestJson, requestDigest, addResponse, errorText, addedItem, createdId, created;
+            var _a;
+            var _b, _c, _d, _e, _f;
             return tslib_1.__generator(this, function (_g) {
                 switch (_g.label) {
                     case 0:
-                        sp = (0, pnpjsConfig_1.getSP)();
-                        taskId = params.taskId, taskTitle = params.taskTitle, collaboratorId = params.collaboratorId, requestedById = params.requestedById;
-                        payload = {
-                            // Title is required by SP — we build a readable label.
-                            Title: "Task ".concat(taskId, " collaboration request"),
-                            TaskId: taskId,
-                            TaskTitle: taskTitle,
-                            // Person fields in SP REST use the Id-suffixed column name.
-                            CollaboratorId: collaboratorId,
-                            RequestedById: requestedById,
-                            Status: 'Pending',
-                            RequestedAt: new Date().toISOString(),
-                        };
-                        return [4 /*yield*/, sp.web.lists
-                                .getByTitle(LIST_TITLE)
-                                .items.add(payload)];
+                        taskId = params.taskId, taskTitle = params.taskTitle, collaboratorId = params.collaboratorId, requestedById = params.requestedById, siteAbsoluteUrl = params.siteAbsoluteUrl;
+                        return [4 /*yield*/, this.getFieldNames()];
                     case 1:
-                        result = _g.sent();
-                        raw = result;
-                        createdId = (_f = (_e = (_d = (_b = (_a = raw === null || raw === void 0 ? void 0 : raw.data) === null || _a === void 0 ? void 0 : _a.Id) !== null && _b !== void 0 ? _b : (_c = raw === null || raw === void 0 ? void 0 : raw.data) === null || _c === void 0 ? void 0 : _c.ID) !== null && _d !== void 0 ? _d : raw === null || raw === void 0 ? void 0 : raw.Id) !== null && _e !== void 0 ? _e : raw === null || raw === void 0 ? void 0 : raw.ID) !== null && _f !== void 0 ? _f : 0;
-                        if (!(createdId > 0)) return [3 /*break*/, 3];
-                        return [4 /*yield*/, this.getRequestById(createdId)];
+                        fieldNames = _g.sent();
+                        responseToken = generateGuid();
+                        todayIso = new Date().toISOString().split('T')[0];
+                        payload = (_a = {
+                                Title: "Task ".concat(taskId, " collaboration request"),
+                                TaskId: String(taskId),
+                                TaskTitle: taskTitle
+                            },
+                            _a[fieldNames.collaborator.idSuffixName] = buildPersonPayload(collaboratorId, fieldNames.collaborator.isMulti),
+                            _a[fieldNames.requestedBy.idSuffixName] = buildPersonPayload(requestedById, fieldNames.requestedBy.isMulti),
+                            _a.Status = 'Pending',
+                            _a.RequestedAt = todayIso,
+                            _a.ResponseToken = responseToken,
+                            _a);
+                        listApiUrl = "".concat(siteAbsoluteUrl, "/_api/web/lists/getByTitle('").concat(LIST_TITLE, "')/items");
+                        contextInfoUrl = "".concat(siteAbsoluteUrl, "/_api/contextinfo");
+                        return [4 /*yield*/, fetch(contextInfoUrl, {
+                                method: 'POST',
+                                headers: { Accept: 'application/json;odata=verbose' },
+                                credentials: 'include',
+                            })];
                     case 2:
+                        digestResponse = _g.sent();
+                        if (!digestResponse.ok) {
+                            throw new Error("Failed to fetch SP request digest: ".concat(digestResponse.status, " ").concat(digestResponse.statusText));
+                        }
+                        return [4 /*yield*/, digestResponse.json()];
+                    case 3:
+                        digestJson = _g.sent();
+                        requestDigest = (_d = (_c = (_b = digestJson === null || digestJson === void 0 ? void 0 : digestJson.d) === null || _b === void 0 ? void 0 : _b.GetContextWebInformation) === null || _c === void 0 ? void 0 : _c.FormDigestValue) !== null && _d !== void 0 ? _d : '';
+                        return [4 /*yield*/, fetch(listApiUrl, {
+                                method: 'POST',
+                                headers: {
+                                    Accept: 'application/json;odata=nometadata',
+                                    'Content-Type': 'application/json;odata=nometadata',
+                                    'X-RequestDigest': requestDigest,
+                                },
+                                credentials: 'include',
+                                body: JSON.stringify(payload),
+                            })];
+                    case 4:
+                        addResponse = _g.sent();
+                        if (!!addResponse.ok) return [3 /*break*/, 6];
+                        return [4 /*yield*/, addResponse.text()];
+                    case 5:
+                        errorText = _g.sent();
+                        console.error('CollaboratorService.createRequest: SP rejected the payload\n', errorText);
+                        throw new Error("SP returned ".concat(addResponse.status, ": ").concat(errorText));
+                    case 6: return [4 /*yield*/, addResponse.json()];
+                    case 7:
+                        addedItem = _g.sent();
+                        createdId = (_f = (_e = addedItem === null || addedItem === void 0 ? void 0 : addedItem.Id) !== null && _e !== void 0 ? _e : addedItem === null || addedItem === void 0 ? void 0 : addedItem.id) !== null && _f !== void 0 ? _f : 0;
+                        if (!(createdId > 0)) return [3 /*break*/, 9];
+                        return [4 /*yield*/, this.getRequestById(createdId)];
+                    case 8:
                         created = _g.sent();
                         if (created)
                             return [2 /*return*/, created];
-                        _g.label = 3;
-                    case 3: 
-                    // Fallback — return a synthetic object so the UI can still update
-                    // optimistically even if the re-fetch fails.
-                    return [2 /*return*/, {
+                        _g.label = 9;
+                    case 9: return [2 /*return*/, {
                             requestId: createdId,
                             taskId: taskId,
                             taskTitle: taskTitle,
                             collaborator: { id: collaboratorId, name: '', email: '', loginName: '' },
                             requestedBy: { id: requestedById, name: '', email: '', loginName: '' },
                             status: 'Pending',
-                            requestedAt: new Date().toISOString(),
+                            requestedAt: todayIso,
                         }];
                 }
             });
@@ -151,7 +215,7 @@ var CollaboratorService = /** @class */ (function () {
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(LIST_TITLE)
                                 .items.getById(requestId)
-                                .select('Id', 'Title', 'TaskId', 'TaskTitle', 'Status', 'RequestedAt', 'RespondedAt', 'RequestedBy/Id', 'RequestedBy/Title', 'RequestedBy/EMail', 'RequestedBy/LoginName', 'Collaborator/Id', 'Collaborator/Title', 'Collaborator/EMail', 'Collaborator/LoginName')
+                                .select('Id', 'Title', 'TaskId', 'TaskTitle', 'Status', 'RequestedAt', 'RespondedAt', 'ResponseToken', 'RequestedBy/Id', 'RequestedBy/Title', 'RequestedBy/EMail', 'Collaborator/Id', 'Collaborator/Title', 'Collaborator/EMail')
                                 .expand('RequestedBy', 'Collaborator')()];
                     case 2:
                         item = _a.sent();
@@ -185,41 +249,34 @@ var CollaboratorService = /** @class */ (function () {
     };
     CollaboratorService.prototype.pendingRequestExists = function (taskId, collaboratorId) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, items, _a;
+            var sp, fieldNames, items, _a;
             return tslib_1.__generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
                         sp = (0, pnpjsConfig_1.getSP)();
                         _b.label = 1;
                     case 1:
-                        _b.trys.push([1, 3, , 4]);
+                        _b.trys.push([1, 4, , 5]);
+                        return [4 /*yield*/, this.getFieldNames()];
+                    case 2:
+                        fieldNames = _b.sent();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(LIST_TITLE)
                                 .items
                                 .select('Id')
-                                .filter("TaskId eq ".concat(taskId, " and CollaboratorId eq ").concat(collaboratorId, " and Status eq 'Pending'"))
+                                .filter("TaskId eq '".concat(taskId, "' and ").concat(fieldNames.collaborator.idSuffixName, " eq ").concat(collaboratorId, " and Status eq 'Pending'"))
                                 .top(1)()];
-                    case 2:
+                    case 3:
                         items = _b.sent();
                         return [2 /*return*/, items.length > 0];
-                    case 3:
+                    case 4:
                         _a = _b.sent();
-                        // If the check fails, let the create attempt proceed —
-                        // SP will handle any list-level constraints.
                         return [2 /*return*/, false];
-                    case 4: return [2 /*return*/];
+                    case 5: return [2 /*return*/];
                 }
             });
         });
     };
-    // -----------------------------------------------------------------------
-    // Update the Collaborators multi-person field on the Tasks list after
-    // a request is accepted via Power Automate.
-    //
-    // Power Automate handles this automatically via the flow, but we expose
-    // this method so you can call it manually from the UI if you ever add
-    // an in-app Accept flow later.
-    // -----------------------------------------------------------------------
     CollaboratorService.prototype.addCollaboratorToTask = function (taskListTitle, taskSpId, collaboratorSpId) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
             var sp, item, raw, existing, updated;
@@ -236,8 +293,7 @@ var CollaboratorService = /** @class */ (function () {
                         item = _d.sent();
                         raw = item;
                         existing = (_c = (_b = (_a = raw === null || raw === void 0 ? void 0 : raw.CollaboratorsId) === null || _a === void 0 ? void 0 : _a.results) !== null && _b !== void 0 ? _b : raw === null || raw === void 0 ? void 0 : raw.CollaboratorsId) !== null && _c !== void 0 ? _c : [];
-                        // Only add if not already present.
-                        if (existing.indexOf(collaboratorSpId) > -1)
+                        if (existing.includes(collaboratorSpId))
                             return [2 /*return*/];
                         updated = tslib_1.__spreadArray(tslib_1.__spreadArray([], existing, true), [collaboratorSpId], false);
                         return [4 /*yield*/, sp.web.lists
@@ -247,6 +303,75 @@ var CollaboratorService = /** @class */ (function () {
                     case 2:
                         _d.sent();
                         return [2 /*return*/];
+                }
+            });
+        });
+    };
+    // ---------------------------------------------------------------------------
+    // Private — field name and type discovery
+    // ---------------------------------------------------------------------------
+    CollaboratorService.prototype.getFieldNames = function () {
+        if (!this.fieldNamesPromise) {
+            this.fieldNamesPromise = this.resolveFieldNames();
+        }
+        return this.fieldNamesPromise;
+    };
+    CollaboratorService.prototype.resolveFieldNames = function () {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var sp, fields, error_3, resolve, result;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        sp = (0, pnpjsConfig_1.getSP)();
+                        fields = [];
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(LIST_TITLE)
+                                .fields
+                                .select('InternalName', 'Title', 'TypeAsString', 'AllowMultipleValues')
+                                .filter("TypeAsString eq 'User' or TypeAsString eq 'UserMulti'")()];
+                    case 2:
+                        // Fetch Person field schema so we know the exact internal names
+                        // and whether each column is single-value User or multi-value UserMulti.
+                        // This determines the correct write format on createRequest.
+                        fields = _a.sent();
+                        return [3 /*break*/, 4];
+                    case 3:
+                        error_3 = _a.sent();
+                        console.warn('CollaboratorService: could not load field schema, using default field names', error_3);
+                        return [3 /*break*/, 4];
+                    case 4:
+                        resolve = function (candidates, fallbackInternalName, fallbackIsMulti) {
+                            var _a;
+                            var match = fields.find(function (field) {
+                                var normalizedInternal = normalizeFieldName(field.InternalName);
+                                var normalizedTitle = normalizeFieldName(field.Title);
+                                return candidates.some(function (candidate) {
+                                    var normalizedCandidate = normalizeFieldName(candidate);
+                                    return (normalizedInternal === normalizedCandidate ||
+                                        normalizedTitle === normalizedCandidate);
+                                });
+                            });
+                            var internalName = (_a = match === null || match === void 0 ? void 0 : match.InternalName) !== null && _a !== void 0 ? _a : fallbackInternalName;
+                            var isMulti = match !== undefined
+                                ? match.TypeAsString === 'UserMulti' || match.AllowMultipleValues === true
+                                : fallbackIsMulti;
+                            return {
+                                internalName: internalName,
+                                idSuffixName: "".concat(internalName, "Id"),
+                                isMulti: isMulti,
+                            };
+                        };
+                        result = {
+                            // Collaborator is UserMulti — confirmed by SP field schema inspection.
+                            collaborator: resolve(COLLABORATOR_FIELD_CANDIDATES, 'Collaborator', true),
+                            // RequestedBy is single-value User — confirmed by SP field schema inspection.
+                            requestedBy: resolve(REQUESTED_BY_FIELD_CANDIDATES, 'RequestedBy', false),
+                        };
+                        console.info('CollaboratorService: resolved field names', result);
+                        return [2 /*return*/, result];
                 }
             });
         });

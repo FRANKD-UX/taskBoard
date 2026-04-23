@@ -348,7 +348,8 @@ var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaite
                 _e.label = 1;
             case 1:
                 _e.trys.push([1, 4, , 5]);
-                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, { headers: { accept: 'application/json;odata=verbose' } })];
+                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, { headers: { accept: 'application/json;odata.metadata=none' } } // <-- FIXED: use metadata=none to avoid 406
+                    )];
             case 2:
                 response = _e.sent();
                 if (!response.ok) {
@@ -403,7 +404,7 @@ var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 
                 _b.trys.push([1, 3, , 4]);
                 return [4 /*yield*/, sp.web.lists
                         .getByTitle('UserRoles')
-                        .items.select('User/Id', 'User/Title', 'User/EMail', 'User/LoginName', 'IsActive')
+                        .items.select('User/Id', 'User/Title', 'User/EMail', 'IsActive')
                         .expand('User')
                         .top(200)()];
             case 2:
@@ -417,16 +418,14 @@ var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 
                             id: (_a = user === null || user === void 0 ? void 0 : user.Id) !== null && _a !== void 0 ? _a : null,
                             name: (user === null || user === void 0 ? void 0 : user.Title) || '',
                             email: (user === null || user === void 0 ? void 0 : user.EMail) || '',
-                            loginName: (user === null || user === void 0 ? void 0 : user.LoginName) || '',
+                            loginName: (user === null || user === void 0 ? void 0 : user.Title) || '', // fallback
                         };
                     })
                         .filter(function (user) {
                         var title = String(user.name || '').toLowerCase();
                         var email = String(user.email || '').toLowerCase();
-                        var loginName = String(user.loginName || '').toLowerCase();
                         return (title.indexOf(normalizedQuery) > -1 ||
-                            email.indexOf(normalizedQuery) > -1 ||
-                            loginName.indexOf(normalizedQuery) > -1);
+                            email.indexOf(normalizedQuery) > -1);
                     })
                         .slice(0, 10)];
             case 3:

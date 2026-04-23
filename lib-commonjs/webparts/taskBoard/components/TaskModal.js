@@ -7,6 +7,7 @@ var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
 var CollaborationPanel_1 = tslib_1.__importDefault(require("./CollaborationPanel"));
+var DepartmentService_1 = require("../../../services/DepartmentService");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -24,7 +25,6 @@ var SITES = [
     { value: 'Troyville', label: 'Troyville (Secondary Office)' },
 ];
 var REQUEST_TYPES = ['Task', 'Incident'];
-var DEPARTMENTS = ['IT', 'Finance', 'Operations', 'Support'];
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -183,8 +183,34 @@ var TaskModal = function (_a) {
     var _l = (0, react_1.useState)(false), isSaving = _l[0], setIsSaving = _l[1];
     var _m = (0, react_1.useState)(''), saveError = _m[0], setSaveError = _m[1];
     var _o = (0, react_1.useState)(''), titleError = _o[0], setTitleError = _o[1];
+    // Departments from SharePoint
+    var _p = (0, react_1.useState)([]), departments = _p[0], setDepartments = _p[1];
+    var _q = (0, react_1.useState)(true), departmentsLoading = _q[0], setDepartmentsLoading = _q[1];
     var titleRef = (0, react_1.useRef)(null);
     var isNewTask = Boolean(draft === null || draft === void 0 ? void 0 : draft.id.startsWith(TEMP_ID_PREFIX));
+    // Load departments on mount
+    (0, react_1.useEffect)(function () {
+        var isMounted = true;
+        var loadDepartments = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+            var service, data;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        service = new DepartmentService_1.DepartmentService();
+                        return [4 /*yield*/, service.getDepartments()];
+                    case 1:
+                        data = _a.sent();
+                        if (isMounted) {
+                            setDepartments(data);
+                            setDepartmentsLoading(false);
+                        }
+                        return [2 /*return*/];
+                }
+            });
+        }); };
+        loadDepartments();
+        return function () { isMounted = false; };
+    }, []);
     // Sync draft state when the task prop changes (different task opened).
     (0, react_1.useEffect)(function () {
         if (!task) {
@@ -332,7 +358,7 @@ var TaskModal = function (_a) {
                         React.createElement("select", { id: "tm-request-type", value: draft.requestType, onChange: function (e) { return update({ requestType: e.target.value }); }, style: inputStyle }, REQUEST_TYPES.map(function (rt) { return (React.createElement("option", { key: rt, value: rt }, rt)); }))),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "tm-department" }, "Department"),
-                        React.createElement("select", { id: "tm-department", value: draft.department, onChange: function (e) { return update({ department: e.target.value }); }, style: inputStyle }, DEPARTMENTS.map(function (d) { return (React.createElement("option", { key: d, value: d }, d)); })))),
+                        React.createElement("select", { id: "tm-department", value: draft.department, onChange: function (e) { return update({ department: e.target.value }); }, style: inputStyle }, departmentsLoading ? (React.createElement("option", null, "Loading...")) : departments.length === 0 ? (React.createElement("option", null, "No departments")) : (departments.map(function (dep) { return (React.createElement("option", { key: dep, value: dep }, dep)); }))))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "tm-description" }, "Description"),
                     React.createElement("textarea", { id: "tm-description", value: (_h = draft.description) !== null && _h !== void 0 ? _h : '', onChange: function (e) { return update({ description: e.target.value }); }, placeholder: "Add a description...", rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),

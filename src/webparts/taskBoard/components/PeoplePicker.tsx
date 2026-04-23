@@ -398,7 +398,7 @@ const searchSiteUsersViaRest = async (query: string, siteUrl?: string): Promise<
         const response = await context.spHttpClient.get(
             `${webUrl}/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500`,
             SPHttpClient.configurations.v1,
-            { headers: { accept: 'application/json;odata=verbose' } }
+            { headers: { accept: 'application/json;odata.metadata=none' } }  // <-- FIXED: use metadata=none to avoid 406
         );
 
         if (!response.ok) {
@@ -447,9 +447,10 @@ const searchUsersFromUserRoles = async (query: string): Promise<IResolvedUser[]>
     const normalizedQuery = query.trim().toLowerCase();
 
     try {
+        // FIXED: Removed User/LoginName from select – it's not a valid field on the User lookup.
         const items = await sp.web.lists
             .getByTitle('UserRoles')
-            .items.select('User/Id', 'User/Title', 'User/EMail', 'User/LoginName', 'IsActive')
+            .items.select('User/Id', 'User/Title', 'User/EMail', 'IsActive')
             .expand('User')
             .top(200)();
 
@@ -461,17 +462,15 @@ const searchUsersFromUserRoles = async (query: string): Promise<IResolvedUser[]>
                     id: user?.Id ?? null,
                     name: user?.Title || '',
                     email: user?.EMail || '',
-                    loginName: user?.LoginName || '',
+                    loginName: user?.Title || '', // fallback
                 } as IResolvedUser;
             })
             .filter((user: IResolvedUser) => {
                 const title = String(user.name || '').toLowerCase();
                 const email = String(user.email || '').toLowerCase();
-                const loginName = String(user.loginName || '').toLowerCase();
                 return (
                     title.indexOf(normalizedQuery) > -1 ||
-                    email.indexOf(normalizedQuery) > -1 ||
-                    loginName.indexOf(normalizedQuery) > -1
+                    email.indexOf(normalizedQuery) > -1
                 );
             })
             .slice(0, 10);

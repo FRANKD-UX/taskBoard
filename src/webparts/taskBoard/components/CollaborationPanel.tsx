@@ -22,12 +22,12 @@ import { THEME } from './theme';
 // ---------------------------------------------------------------------------
 
 export interface ICollaborationPanelProps {
-    // The numeric SP list item ID of the task — NOT the temp string id.
-    // Pass null when the task has not been saved to SP yet.
     taskSpId: number | null;
     taskTitle: string;
-    // The SP user ID of the person currently logged in.
     currentUserSpId: number | null;
+    // The absolute URL of the SP site, e.g. "https://tenant.sharepoint.com/sites/Helpdesk".
+    // Required for the raw-fetch path in CollaboratorService.createRequest.
+    // Comes from context.pageContext.web.absoluteUrl in the parent component.
     siteUrl?: string;
 }
 
@@ -58,14 +58,19 @@ const getAvatarColor = (name: string): string => {
 const formatDate = (iso?: string): string => {
     if (!iso) return '';
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return isNaN(d.getTime())
+        ? ''
+        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const Avatar: React.FC<{ collaborator: ICollaborator; size?: number }> = ({ collaborator, size = 30 }) => (
+const Avatar: React.FC<{ collaborator: ICollaborator; size?: number }> = ({
+    collaborator,
+    size = 30,
+}) => (
     <div
         title={`${collaborator.name}${collaborator.email ? ` — ${collaborator.email}` : ''}`}
         style={{
@@ -89,7 +94,6 @@ const Avatar: React.FC<{ collaborator: ICollaborator; size?: number }> = ({ coll
     </div>
 );
 
-// Shows the status badge (Pending / Accepted / Declined) next to a request.
 const StatusBadge: React.FC<{ status: ICollaborationRequest['status'] }> = ({ status }) => {
     const colorMap: Record<ICollaborationRequest['status'], string> = {
         Pending: '#f59e0b',
@@ -160,7 +164,10 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
     // Derived state
     // -----------------------------------------------------------------------
 
-    const acceptedCollaborators = requests.filter((r) => r.status === 'Accepted').map((r) => r.collaborator);
+    const acceptedCollaborators = requests
+        .filter((r) => r.status === 'Accepted')
+        .map((r) => r.collaborator);
+
     const pendingRequests = requests.filter((r) => r.status === 'Pending');
     const declinedRequests = requests.filter((r) => r.status === 'Declined');
 
@@ -173,7 +180,14 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
 
         const collaboratorSpId = selectedUser.id;
         if (!collaboratorSpId || collaboratorSpId <= 0) {
-            setErrorMessage('Could not resolve the selected user to a SharePoint account. Try selecting them again.');
+            setErrorMessage(
+                'Could not resolve the selected user to a SharePoint account. Try selecting them again.'
+            );
+            return;
+        }
+
+        if (!siteUrl) {
+            setErrorMessage('Site URL is not configured. Cannot send collaboration request.');
             return;
         }
 
@@ -182,14 +196,15 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
         setIsSending(true);
 
         try {
-            // Guard against duplicate pending requests for the same person.
-            const alreadyPending = await collaboratorService.pendingRequestExists(taskSpId, collaboratorSpId);
+            const alreadyPending = await collaboratorService.pendingRequestExists(
+                taskSpId,
+                collaboratorSpId
+            );
             if (alreadyPending) {
                 setErrorMessage(`A pending request was already sent to ${selectedUser.name}.`);
                 return;
             }
 
-            // Check they are not already an accepted collaborator.
             const alreadyAccepted = acceptedCollaborators.some((c) => c.id === collaboratorSpId);
             if (alreadyAccepted) {
                 setErrorMessage(`${selectedUser.name} is already collaborating on this task.`);
@@ -201,13 +216,18 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
                 taskTitle,
                 collaboratorId: collaboratorSpId,
                 requestedById: currentUserSpId,
+                // Pass the absolute site URL so createRequest can construct
+                // correct fetch URLs without relying on sp.web.toUrl() which
+                // returns a relative path and causes a doubled URL in SPFx.
+                siteAbsoluteUrl: siteUrl,
             });
 
-            setSuccessMessage(`Collaboration request sent to ${selectedUser.name}. They will receive an email shortly.`);
+            setSuccessMessage(
+                `Collaboration request sent to ${selectedUser.name}. They will receive an email shortly.`
+            );
             setSelectedUser(null);
             setIsRequesting(false);
 
-            // Refresh the list so the new Pending row appears immediately.
             await loadRequests();
         } catch (error) {
             console.error('CollaborationPanel: failed to send request', error);
@@ -217,7 +237,10 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
         }
     };
 
-    const handleCancelRequest = async (requestId: number, collaboratorName: string): Promise<void> => {
+    const handleCancelRequest = async (
+        requestId: number,
+        collaboratorName: string
+    ): Promise<void> => {
         if (!window.confirm(`Cancel the collaboration request sent to ${collaboratorName}?`)) return;
 
         try {
@@ -286,7 +309,6 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
             {/* Accepted collaborator avatar stack */}
             {!isLoading && acceptedCollaborators.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    {/* The first avatar has no negative margin so we reset it */}
                     {acceptedCollaborators.map((collaborator, index) => (
                         <div key={collaborator.email || collaborator.name} style={{ marginLeft: index === 0 ? 0 : -6 }}>
                             <Avatar collaborator={collaborator} size={32} />
@@ -372,7 +394,6 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
                                     </div>
                                 </div>
                                 <StatusBadge status={req.status} />
-                                {/* Only show cancel if the current user sent this request */}
                                 {req.requestedBy.id === currentUserSpId && (
                                     <button
                                         type="button"
@@ -389,7 +410,7 @@ const CollaborationPanel: React.FC<ICollaborationPanelProps> = ({
                 </div>
             )}
 
-            {/* Declined requests — shown collapsed so they do not dominate the UI */}
+            {/* Declined requests */}
             {declinedRequests.length > 0 && (
                 <details style={{ marginTop: '14px' }}>
                     <summary style={{ fontSize: '12px', color: THEME.colors.textSecondary, cursor: 'pointer', userSelect: 'none' }}>

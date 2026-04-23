@@ -6,9 +6,8 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
-// ---------------------------------------------------------------------------
+var DepartmentService_1 = require("../../../services/DepartmentService");
 // Constants
-// ---------------------------------------------------------------------------
 var TASK_STATUSES = [
     'Unassigned',
     'Backlog',
@@ -22,7 +21,6 @@ var SITES = [
     { value: 'Troyville', label: 'Troyville (Secondary Office)' },
 ];
 var REQUEST_TYPES = ['Task', 'Incident'];
-var DEPARTMENTS = ['IT', 'Finance', 'Operations', 'Support'];
 var TEMP_ID_PREFIX = 'temp_';
 var getTodayIso = function () {
     var now = new Date();
@@ -31,9 +29,7 @@ var getTodayIso = function () {
     var day = String(now.getDate()).padStart(2, '0');
     return "".concat(year, "-").concat(month, "-").concat(day);
 };
-// ---------------------------------------------------------------------------
 // Styles
-// ---------------------------------------------------------------------------
 var overlayStyle = {
     position: 'fixed',
     inset: 0,
@@ -102,9 +98,7 @@ var gridTwoColumnStyle = {
     gridTemplateColumns: '1fr 1fr',
     gap: '14px',
 };
-// ---------------------------------------------------------------------------
 // Component
-// ---------------------------------------------------------------------------
 var CreateTaskModal = function (_a) {
     var defaultStatus = _a.defaultStatus, siteUrl = _a.siteUrl, canAssign = _a.canAssign, onConfirm = _a.onConfirm, onCancel = _a.onCancel;
     var today = getTodayIso();
@@ -122,7 +116,37 @@ var CreateTaskModal = function (_a) {
     }), form = _b[0], setForm = _b[1];
     var _c = (0, react_1.useState)(null), assignee = _c[0], setAssignee = _c[1];
     var _d = (0, react_1.useState)(''), titleError = _d[0], setTitleError = _d[1];
+    // Departments from SharePoint
+    var _e = (0, react_1.useState)([]), departments = _e[0], setDepartments = _e[1];
+    var _f = (0, react_1.useState)(true), departmentsLoading = _f[0], setDepartmentsLoading = _f[1];
     var titleRef = (0, react_1.useRef)(null);
+    // Load departments on mount
+    (0, react_1.useEffect)(function () {
+        var isMounted = true;
+        var loadDepartments = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+            var service, data;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        service = new DepartmentService_1.DepartmentService();
+                        return [4 /*yield*/, service.getDepartments()];
+                    case 1:
+                        data = _a.sent();
+                        if (isMounted) {
+                            setDepartments(data);
+                            // If the current form department isn't in the list, default to first item
+                            if (data.length > 0 && !data.includes(form.department)) {
+                                setForm(function (prev) { return (tslib_1.__assign(tslib_1.__assign({}, prev), { department: data[0] })); });
+                            }
+                            setDepartmentsLoading(false);
+                        }
+                        return [2 /*return*/];
+                }
+            });
+        }); };
+        loadDepartments();
+        return function () { isMounted = false; };
+    }, []);
     (0, react_1.useEffect)(function () {
         var _a;
         (_a = titleRef.current) === null || _a === void 0 ? void 0 : _a.focus();
@@ -135,9 +159,7 @@ var CreateTaskModal = function (_a) {
         window.addEventListener('keydown', handleKey);
         return function () { return window.removeEventListener('keydown', handleKey); };
     }, [onCancel]);
-    // ---------------------------------------------------------------------------
     // Handlers
-    // ---------------------------------------------------------------------------
     var handleFieldChange = function (field, value) {
         setForm(function (previous) {
             var _a;
@@ -173,9 +195,7 @@ var CreateTaskModal = function (_a) {
         };
         onConfirm(draft);
     };
-    // ---------------------------------------------------------------------------
     // Render
-    // ---------------------------------------------------------------------------
     return (React.createElement("div", { style: overlayStyle, onClick: onCancel },
         React.createElement("div", { style: modalStyle, onClick: function (e) { return e.stopPropagation(); } },
             React.createElement("div", { style: headerStyle },
@@ -233,7 +253,7 @@ var CreateTaskModal = function (_a) {
                         React.createElement("select", { id: "ctm-request-type", value: form.requestType, onChange: function (e) { return handleFieldChange('requestType', e.target.value); }, style: inputStyle }, REQUEST_TYPES.map(function (rt) { return (React.createElement("option", { key: rt, value: rt }, rt)); }))),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "ctm-department" }, "Department"),
-                        React.createElement("select", { id: "ctm-department", value: form.department, onChange: function (e) { return handleFieldChange('department', e.target.value); }, style: inputStyle }, DEPARTMENTS.map(function (d) { return (React.createElement("option", { key: d, value: d }, d)); })))),
+                        React.createElement("select", { id: "ctm-department", value: form.department, onChange: function (e) { return handleFieldChange('department', e.target.value); }, style: inputStyle }, departmentsLoading ? (React.createElement("option", null, "Loading...")) : departments.length === 0 ? (React.createElement("option", null, "No departments")) : (departments.map(function (dep) { return (React.createElement("option", { key: dep, value: dep }, dep)); }))))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "ctm-description" }, "Description"),
                     React.createElement("textarea", { id: "ctm-description", value: form.description, onChange: function (e) { return handleFieldChange('description', e.target.value); }, placeholder: "Optional description...", rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px', fontFamily: 'inherit' }) }))),

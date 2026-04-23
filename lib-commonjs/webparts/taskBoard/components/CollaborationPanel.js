@@ -40,7 +40,9 @@ var formatDate = function (iso) {
     if (!iso)
         return '';
     var d = new Date(iso);
-    return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return isNaN(d.getTime())
+        ? ''
+        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 };
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -64,7 +66,6 @@ var Avatar = function (_a) {
             cursor: 'default',
         } }, getInitials(collaborator.name)));
 };
-// Shows the status badge (Pending / Accepted / Declined) next to a request.
 var StatusBadge = function (_a) {
     var status = _a.status;
     var colorMap = {
@@ -132,7 +133,9 @@ var CollaborationPanel = function (_a) {
     // -----------------------------------------------------------------------
     // Derived state
     // -----------------------------------------------------------------------
-    var acceptedCollaborators = requests.filter(function (r) { return r.status === 'Accepted'; }).map(function (r) { return r.collaborator; });
+    var acceptedCollaborators = requests
+        .filter(function (r) { return r.status === 'Accepted'; })
+        .map(function (r) { return r.collaborator; });
     var pendingRequests = requests.filter(function (r) { return r.status === 'Pending'; });
     var declinedRequests = requests.filter(function (r) { return r.status === 'Declined'; });
     // -----------------------------------------------------------------------
@@ -148,6 +151,10 @@ var CollaborationPanel = function (_a) {
                     collaboratorSpId = selectedUser.id;
                     if (!collaboratorSpId || collaboratorSpId <= 0) {
                         setErrorMessage('Could not resolve the selected user to a SharePoint account. Try selecting them again.');
+                        return [2 /*return*/];
+                    }
+                    if (!siteUrl) {
+                        setErrorMessage('Site URL is not configured. Cannot send collaboration request.');
                         return [2 /*return*/];
                     }
                     setErrorMessage('');
@@ -173,16 +180,18 @@ var CollaborationPanel = function (_a) {
                             taskTitle: taskTitle,
                             collaboratorId: collaboratorSpId,
                             requestedById: currentUserSpId,
+                            // Pass the absolute site URL so createRequest can construct
+                            // correct fetch URLs without relying on sp.web.toUrl() which
+                            // returns a relative path and causes a doubled URL in SPFx.
+                            siteAbsoluteUrl: siteUrl,
                         })];
                 case 3:
                     _a.sent();
                     setSuccessMessage("Collaboration request sent to ".concat(selectedUser.name, ". They will receive an email shortly."));
                     setSelectedUser(null);
                     setIsRequesting(false);
-                    // Refresh the list so the new Pending row appears immediately.
                     return [4 /*yield*/, loadRequests()];
                 case 4:
-                    // Refresh the list so the new Pending row appears immediately.
                     _a.sent();
                     return [3 /*break*/, 7];
                 case 5:
