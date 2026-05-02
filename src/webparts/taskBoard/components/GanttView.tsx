@@ -50,7 +50,7 @@ const GanttView: React.FC<IGanttViewProps> = ({ tasks, statuses, onTaskClick }):
         const end = parseDate(task.dueDate);
         if (!end) return null;
 
-        const status = statuses.indexOf(task.status) > -1 ? task.status : 'Unassigned';
+        const status = statuses.indexOf(task.status as TaskStatus) > -1 ? task.status as TaskStatus : 'Unassigned';
         const start = parseDate(task.createdAt) || new Date(end.getTime() - 3 * DAY_IN_MS);
 
         return {

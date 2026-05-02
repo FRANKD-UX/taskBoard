@@ -209,7 +209,7 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
 
   const getTasksForStatus = (status: TaskStatus): Task[] => {
     if (status === 'Unassigned') {
-      return filteredTasks.filter((task) => task.status === status || statuses.indexOf(task.status) === -1);
+      return filteredTasks.filter((task) => task.status === status || statuses.indexOf(task.status as TaskStatus) === -1);
     }
     return filteredTasks.filter((task) => task.status === status);
   };

@@ -47,11 +47,41 @@ var SharePointService = /** @class */ (function () {
         });
     };
     /**
+     * Get active incident types from SharePoint
+     */
+    SharePointService.prototype.getIncidentTypes = function (department) {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var sanitizedDepartment, items, error_2;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _a.trys.push([0, 2, , 3]);
+                        sanitizedDepartment = department.replace(/'/g, "''");
+                        return [4 /*yield*/, this.sp.web.lists
+                                .getByTitle("IncidentTypes")
+                                .items
+                                .select('Id', 'Title', 'Severity', 'Department', 'IsActive')
+                                .filter("Department eq '".concat(sanitizedDepartment, "' and IsActive eq 1"))
+                                .orderBy('Title', true)()];
+                    case 1:
+                        items = _a.sent();
+                        console.log('SharePointService.getIncidentTypes - raw items:', items);
+                        return [2 /*return*/, items];
+                    case 2:
+                        error_2 = _a.sent();
+                        console.error('SharePointService.getIncidentTypes - error:', error_2);
+                        throw error_2;
+                    case 3: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    /**
      * Create a new task in SharePoint
      */
     SharePointService.prototype.createTask = function (task) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var addData, result, error_2;
+            var addData, result, error_3;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -81,9 +111,9 @@ var SharePointService = /** @class */ (function () {
                         console.log('SharePointService.createTask - result:', result);
                         return [2 /*return*/, { id: result.data.Id }];
                     case 2:
-                        error_2 = _a.sent();
-                        console.error('SharePointService.createTask - error:', error_2);
-                        throw error_2;
+                        error_3 = _a.sent();
+                        console.error('SharePointService.createTask - error:', error_3);
+                        throw error_3;
                     case 3: return [2 /*return*/];
                 }
             });
@@ -94,7 +124,7 @@ var SharePointService = /** @class */ (function () {
      */
     SharePointService.prototype.updateTask = function (id, task) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var updateData, error_3;
+            var updateData, error_4;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -131,9 +161,9 @@ var SharePointService = /** @class */ (function () {
                         _a.sent();
                         return [3 /*break*/, 3];
                     case 2:
-                        error_3 = _a.sent();
-                        console.error('SharePointService.updateTask - error:', error_3);
-                        throw error_3;
+                        error_4 = _a.sent();
+                        console.error('SharePointService.updateTask - error:', error_4);
+                        throw error_4;
                     case 3: return [2 /*return*/];
                 }
             });
@@ -144,7 +174,7 @@ var SharePointService = /** @class */ (function () {
      */
     SharePointService.prototype.updateTaskStatus = function (id, status) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var error_4;
+            var error_5;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -158,9 +188,9 @@ var SharePointService = /** @class */ (function () {
                         _a.sent();
                         return [3 /*break*/, 3];
                     case 2:
-                        error_4 = _a.sent();
-                        console.error('SharePointService.updateTaskStatus - error:', error_4);
-                        throw error_4;
+                        error_5 = _a.sent();
+                        console.error('SharePointService.updateTaskStatus - error:', error_5);
+                        throw error_5;
                     case 3: return [2 /*return*/];
                 }
             });
@@ -171,7 +201,7 @@ var SharePointService = /** @class */ (function () {
      */
     SharePointService.prototype.deleteTask = function (id) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var error_5;
+            var error_6;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -186,9 +216,9 @@ var SharePointService = /** @class */ (function () {
                         _a.sent();
                         return [3 /*break*/, 3];
                     case 2:
-                        error_5 = _a.sent();
-                        console.error('SharePointService.deleteTask - error:', error_5);
-                        throw error_5;
+                        error_6 = _a.sent();
+                        console.error('SharePointService.deleteTask - error:', error_6);
+                        throw error_6;
                     case 3: return [2 /*return*/];
                 }
             });

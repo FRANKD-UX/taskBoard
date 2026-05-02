@@ -28,6 +28,14 @@ export interface TaskItem {
     };
 }
 
+export interface IncidentTypeItem {
+    Id: number;
+    Title: string;
+    Severity?: string;
+    Department?: string;
+    IsActive?: boolean;
+}
+
 export class SharePointService {
     private sp: SPFI;
 
@@ -69,6 +77,27 @@ export class SharePointService {
             return items as TaskItem[];
         } catch (error) {
             console.error('SharePointService.getTasks - error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get active incident types from SharePoint
+     */
+    public async getIncidentTypes(department: string): Promise<IncidentTypeItem[]> {
+        try {
+            const sanitizedDepartment = department.replace(/'/g, "''");
+            const items = await this.sp.web.lists
+                .getByTitle("IncidentTypes")
+                .items
+                .select('Id', 'Title', 'Severity', 'Department', 'IsActive')
+                .filter(`Department eq '${sanitizedDepartment}' and IsActive eq 1`)
+                .orderBy('Title', true)();
+
+            console.log('SharePointService.getIncidentTypes - raw items:', items);
+            return items as IncidentTypeItem[];
+        } catch (error) {
+            console.error('SharePointService.getIncidentTypes - error:', error);
             throw error;
         }
     }

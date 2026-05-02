@@ -20,11 +20,20 @@ exports.THEME = {
         ThisWeek: '#3b82f6',
         InProgress: '#f59e0b',
         Completed: '#22c55e',
+        New: '#dc2626',
+        Investigating: '#d97706',
+        Resolved: '#16a34a',
     },
     priorityColors: {
         Low: '#22c55e',
         Medium: '#f59e0b',
         High: '#ef4444',
+    },
+    severityColors: {
+        P1: '#dc2626',
+        P2: '#ea580c',
+        P3: '#2563eb',
+        P4: '#64748b',
     },
 };
 //# sourceMappingURL=theme.js.map

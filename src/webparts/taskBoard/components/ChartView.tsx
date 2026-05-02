@@ -48,7 +48,7 @@ const ChartView: React.FC<IChartViewProps> = ({ tasks, statuses }): React.ReactE
     }, {} as Record<TaskStatus, number>);
 
     tasks.forEach((task) => {
-      if (task.status in initial) initial[task.status] += 1;
+      if (task.status in initial) initial[task.status as TaskStatus] += 1;
     });
 
     return initial;

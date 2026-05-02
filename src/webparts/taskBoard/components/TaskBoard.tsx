@@ -1,626 +1,797 @@
-// TaskBoard.tsx
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { DragDropContext } from 'react-beautiful-dnd';
 import type { DropResult } from 'react-beautiful-dnd';
 
-import type { ITaskBoardProps } from './ITaskBoardProps';
+import AppLayout, { type PrimaryViewKey } from './AppLayout';
 import BoardView from './BoardView';
-import TaskModal from './TaskModal';
-import TableView from './TableView';
 import CalendarView from './CalendarView';
 import ChartView from './ChartView';
 import GanttView from './GanttView';
-import type { Task, TaskStatus } from './TaskTypes';
+import type { ITaskBoardProps } from './ITaskBoardProps';
+import TableView from './TableView';
+import type {
+    IncidentStatus,
+    Task,
+    TaskPriority,
+    TaskRequestType,
+    TaskSite,
+    TaskStatus,
+    WorkItemStatus,
+    WorkItemType,
+} from './TaskTypes';
+import { buildIncidentSla } from './incidentSla';
 import { THEME } from './theme';
-import { TaskService } from '../../../services/TaskService';
+import WorkItemModal from './WorkItemModal';
 import { getSP } from '../../../pnpjsConfig';
+import { TaskService } from '../../../services/TaskService';
 import { getUserRole } from '../../../services/UserRoleService';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const TEMP_ID_PREFIX = 'temp_';
 
 const TASK_STATUSES: TaskStatus[] = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
+const INCIDENT_STATUSES: IncidentStatus[] = ['New', 'Investigating', 'Resolved'];
 
 const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
-  { key: 'board',    label: 'Board'    },
-  { key: 'table',   label: 'Table'    },
-  { key: 'calendar', label: 'Calendar' },
-  { key: 'gantt',   label: 'Gantt'    },
-  { key: 'chart',   label: 'Chart'    },
+    { key: 'board', label: 'Board' },
+    { key: 'table', label: 'Table' },
+    { key: 'calendar', label: 'Calendar' },
+    { key: 'gantt', label: 'Gantt' },
+    { key: 'chart', label: 'Chart' },
 ];
 
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
+const toRequestType = (type: WorkItemType): TaskRequestType => {
+    return type === 'incident' ? 'Incident' : 'Task';
+};
+
+const toWorkItemType = (requestType?: string): WorkItemType => {
+    return (requestType ?? '').toLowerCase() === 'incident' ? 'incident' : 'task';
+};
+
+const toTaskPriority = (value?: string): TaskPriority => {
+    if (value === 'Low' || value === 'High') return value;
+    return 'Medium';
+};
+
+const toTaskSite = (value?: string): TaskSite => {
+    return value === 'Troyville' ? 'Troyville' : 'Albertsdal';
+};
 
 const toTaskStatus = (value?: string): TaskStatus => {
-  if (value && TASK_STATUSES.indexOf(value as TaskStatus) > -1) {
-    return value as TaskStatus;
-  }
-  return 'Unassigned';
+    if (value && TASK_STATUSES.indexOf(value as TaskStatus) > -1) {
+        return value as TaskStatus;
+    }
+    return 'Unassigned';
+};
+
+const toIncidentStatus = (value?: string): IncidentStatus => {
+    if (value && INCIDENT_STATUSES.indexOf(value as IncidentStatus) > -1) {
+        return value as IncidentStatus;
+    }
+    return 'New';
+};
+
+const toWorkItemStatus = (value: string | undefined, type: WorkItemType): WorkItemStatus => {
+    return type === 'incident' ? toIncidentStatus(value) : toTaskStatus(value);
+};
+
+const getStatusesForType = (type: WorkItemType): WorkItemStatus[] => {
+    return type === 'incident' ? INCIDENT_STATUSES : TASK_STATUSES;
 };
 
 const getTodayIso = (): string => {
-  const d = new Date();
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-  ].join('-');
+    const d = new Date();
+    return [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0'),
+    ].join('-');
 };
 
-const groupTasksByStatus = (tasks: Task[]): Record<TaskStatus, Task[]> => {
-  const grouped: Record<TaskStatus, Task[]> = {
-    Unassigned: [], Backlog: [], ThisWeek: [], InProgress: [], Completed: [],
-  };
-  tasks.forEach((task) => {
-    if (TASK_STATUSES.indexOf(task.status) > -1) {
-      grouped[task.status].push(task);
-    } else {
-      grouped.Unassigned.push(task);
+const reorderTasksAfterDrag = (
+    tasks: Task[],
+    result: DropResult,
+    statuses: WorkItemStatus[]
+): Task[] => {
+    const { source, destination, draggableId } = result;
+    if (!destination) return tasks;
+
+    const srcStatus = source.droppableId as WorkItemStatus;
+    const dstStatus = destination.droppableId as WorkItemStatus;
+
+    if (
+        statuses.indexOf(srcStatus) === -1 ||
+        statuses.indexOf(dstStatus) === -1 ||
+        (srcStatus === dstStatus && source.index === destination.index)
+    ) {
+        return tasks;
     }
-  });
-  return grouped;
+
+    const draggedTask = tasks.find((task) => task.id === draggableId);
+    if (!draggedTask) return tasks;
+
+    const relevantTasks = tasks.filter((task) => task.type === draggedTask.type);
+    const grouped = statuses.reduce<Record<string, Task[]>>((acc, status) => {
+        acc[status] = [];
+        return acc;
+    }, {});
+
+    relevantTasks.forEach((task) => {
+        if (statuses.indexOf(task.status) > -1) {
+            grouped[task.status].push(task);
+        } else {
+            grouped[statuses[0]].push(task);
+        }
+    });
+
+    const srcTasks = grouped[srcStatus].slice();
+    const dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
+
+    const [moved] = srcTasks.splice(source.index, 1);
+    if (!moved) return tasks;
+
+    dstTasks.splice(destination.index, 0, { ...moved, status: dstStatus });
+    grouped[srcStatus] = srcTasks;
+    grouped[dstStatus] = dstTasks;
+
+    const reorderedRelevantTasks = statuses.reduce<Task[]>((acc, status) => acc.concat(grouped[status]), []);
+    const reorderedIds = new Set(reorderedRelevantTasks.map((task) => task.id));
+
+    return [
+        ...tasks.filter((task) => !reorderedIds.has(task.id)),
+        ...reorderedRelevantTasks,
+    ];
 };
 
-const reorderTasksAfterDrag = (tasks: Task[], result: DropResult): Task[] => {
-  const { source, destination } = result;
-  if (!destination) return tasks;
-
-  const srcStatus = source.droppableId as TaskStatus;
-  const dstStatus = destination.droppableId as TaskStatus;
-
-  if (
-    TASK_STATUSES.indexOf(srcStatus) === -1 ||
-    TASK_STATUSES.indexOf(dstStatus) === -1 ||
-    (srcStatus === dstStatus && source.index === destination.index)
-  ) {
-    return tasks;
-  }
-
-  const grouped = groupTasksByStatus(tasks);
-  const srcTasks = grouped[srcStatus].slice();
-  const dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
-
-  const [moved] = srcTasks.splice(source.index, 1);
-  if (!moved) return tasks;
-
-  dstTasks.splice(destination.index, 0, { ...moved, status: dstStatus });
-  grouped[srcStatus] = srcTasks;
-  grouped[dstStatus] = dstTasks;
-
-  return TASK_STATUSES.reduce<Task[]>((acc, s) => acc.concat(grouped[s]), []);
-};
-
-// Resolves a display name / email / loginName to a numeric SharePoint user ID.
-// Tries multiple lookup strategies so we can handle all identity formats SP returns.
 const resolveSharePointUserId = async (email: string, loginName: string): Promise<number | null> => {
-  const sp = getSP();
+    const sp = getSP();
 
-  const normalizedEmail = (email || '').trim();
-  const normalizedLoginName = (loginName || '').trim();
+    const normalizedEmail = (email || '').trim();
+    const normalizedLoginName = (loginName || '').trim();
 
-  const tryEnsure = async (value: string): Promise<number | null> => {
-    if (!value) return null;
-    try {
-      const ensured = await sp.web.ensureUser(value);
-      const ensuredAny = ensured as any;
-      return ensuredAny?.Id ?? ensuredAny?.data?.Id ?? null;
-    } catch {
-      return null;
-    }
-  };
+    const tryEnsure = async (value: string): Promise<number | null> => {
+        if (!value) return null;
+        try {
+            const ensured = await sp.web.ensureUser(value);
+            const ensuredAny = ensured as any;
+            return ensuredAny?.Id ?? ensuredAny?.data?.Id ?? null;
+        } catch {
+            return null;
+        }
+    };
 
-  if (normalizedEmail) {
-    try {
-      const user = await sp.web.siteUsers.getByEmail(normalizedEmail)();
-      if (user?.Id) return user.Id;
-    } catch { /* fall through to loginName */ }
+    if (normalizedEmail) {
+        try {
+            const user = await sp.web.siteUsers.getByEmail(normalizedEmail)();
+            if (user?.Id) return user.Id;
+        } catch {
+            // Fall through to login name handling.
+        }
 
-    const claimId = await tryEnsure(`i:0#.f|membership|${normalizedEmail}`);
-    if (claimId) return claimId;
-  }
-
-  if (normalizedLoginName) {
-    const ensuredLoginId = await tryEnsure(normalizedLoginName);
-    if (ensuredLoginId) return ensuredLoginId;
-
-    const lower = normalizedLoginName.toLowerCase();
-    if (lower.indexOf('@') > -1 && lower.indexOf('|') === -1) {
-      const claimId = await tryEnsure(`i:0#.f|membership|${normalizedLoginName}`);
-      if (claimId) return claimId;
+        const claimId = await tryEnsure(`i:0#.f|membership|${normalizedEmail}`);
+        if (claimId) return claimId;
     }
 
-    const maybeEmail = lower.indexOf('|') > -1
-      ? normalizedLoginName.split('|').pop()?.trim() || ''
-      : '';
+    if (normalizedLoginName) {
+        const ensuredLoginId = await tryEnsure(normalizedLoginName);
+        if (ensuredLoginId) return ensuredLoginId;
 
-    if (maybeEmail) {
-      try {
-        const user = await sp.web.siteUsers.getByEmail(maybeEmail)();
-        if (user?.Id) return user.Id;
-      } catch { /* no-op */ }
+        const lower = normalizedLoginName.toLowerCase();
+        if (lower.indexOf('@') > -1 && lower.indexOf('|') === -1) {
+            const claimId = await tryEnsure(`i:0#.f|membership|${normalizedLoginName}`);
+            if (claimId) return claimId;
+        }
+
+        const maybeEmail = lower.indexOf('|') > -1
+            ? normalizedLoginName.split('|').pop()?.trim() || ''
+            : '';
+
+        if (maybeEmail) {
+            try {
+                const user = await sp.web.siteUsers.getByEmail(maybeEmail)();
+                if (user?.Id) return user.Id;
+            } catch {
+                // No-op.
+            }
+        }
     }
-  }
 
-  return null;
+    return null;
 };
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [modalTask, setModalTask] = useState<Task | null>(null);
-  const [activeView, setActiveView] = useState<ViewKey>('board');
-  const [displayedView, setDisplayedView] = useState<ViewKey>('board');
-  const [isViewVisible, setIsViewVisible] = useState<boolean>(true);
-  const [hoveredTab, setHoveredTab] = useState<ViewKey | null>(null);
-  const [canAssign, setCanAssign] = useState<boolean>(false);
-  const [currentUserName, setCurrentUserName] = useState<string>('');
-  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+    const [workItems, setWorkItems] = useState<Task[]>([]);
+    const [modalTask, setModalTask] = useState<Task | null>(null);
+    const [selectedView, setSelectedView] = useState<PrimaryViewKey>('dashboard');
+    const [activeView, setActiveView] = useState<ViewKey>('board');
+    const [displayedView, setDisplayedView] = useState<ViewKey>('board');
+    const [isViewVisible, setIsViewVisible] = useState<boolean>(true);
+    const [hoveredTab, setHoveredTab] = useState<ViewKey | null>(null);
+    const [canAssign, setCanAssign] = useState<boolean>(false);
+    const [currentUserName, setCurrentUserName] = useState<string>('');
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+    const [currentUserSpId, setCurrentUserSpId] = useState<number | null>(null);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // The numeric SharePoint user ID — different from the display name string.
-  // CollaborationPanel needs this to stamp RequestedById on new requests and
-  // to decide which cancel buttons are visible.
-  const [currentUserSpId, setCurrentUserSpId] = useState<number | null>(null);
+    const taskService = useMemo(() => new TaskService(), []);
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+    const taskItems = useMemo(() => workItems.filter((item) => item.type === 'task'), [workItems]);
+    const incidentItems = useMemo(() => workItems.filter((item) => item.type === 'incident'), [workItems]);
 
-  const taskService = useMemo(() => new TaskService(), []);
+    useEffect(() => {
+        (window as any).spfxContext = context;
+    }, [context]);
 
-  // Make the SPFx context available on window so PeoplePicker can reach it.
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).spfxContext = context;
-  }, [context]);
+    const mapServiceItemToTask = React.useCallback((item: any, createdByFallback: string): Task => {
+        const type = item.type || toWorkItemType(item.requestType);
 
-  // ---------------------------------------------------------------------------
-  // Initial data load
-  // ---------------------------------------------------------------------------
+        return {
+            id: item.id.toString(),
+            type,
+            title: item.title,
+            status: toWorkItemStatus(item.status, type),
+            priority: toTaskPriority(item.priority),
+            site: toTaskSite(item.site),
+            assignedTo: item.assignedTo,
+            assignedToId: item.assignedToId ?? undefined,
+            assignedToEmail: item.assignedToEmail,
+            assignedToLoginName: item.assignedToLoginName,
+            startDate: item.startDate,
+            dueDate: item.dueDate,
+            createdAt: item.createdAt || new Date().toISOString(),
+            requestType: toRequestType(type),
+            department: item.department || 'IT',
+            description: item.description,
+            createdBy: item.createdBy || createdByFallback,
+            severity: item.severity,
+            impact: item.impact,
+            affectedService: item.affectedService,
+            incidentTypeId: item.incidentTypeId,
+            incidentType: item.incidentType,
+            slaResponseMinutes: item.slaResponseMinutes,
+            slaResolutionMinutes: item.slaResolutionMinutes,
+            slaDeadline: item.slaDeadline,
+            slaStatus: item.slaStatus,
+        };
+    }, []);
 
-  useEffect(() => {
-    const loadTasks = async (): Promise<void> => {
-      try {
-        setIsLoading(true);
-        const sp = getSP();
+    const refreshWorkItems = React.useCallback(async (createdByFallback: string): Promise<void> => {
+        const data = await taskService.getTasks();
+        setWorkItems(data.map((item: any) => mapServiceItemToTask(item, createdByFallback)));
+    }, [mapServiceItemToTask, taskService]);
 
-        const user = await sp.web.currentUser();
-        setCurrentUserName(user.Title || '');
-        setCurrentUserEmail(user.Email || '');
-        setCurrentUserSpId((user as any).Id ?? null);
+    useEffect(() => {
+        const loadTasks = async (): Promise<void> => {
+            try {
+                setIsLoading(true);
+                const sp = getSP();
+                const user = await sp.web.currentUser();
+
+                setCurrentUserName(user.Title || '');
+                setCurrentUserEmail(user.Email || '');
+                setCurrentUserSpId((user as any).Id ?? null);
+
+                try {
+                    const role = await getUserRole(user.Email || '');
+                    setCanAssign(role?.canAssign === true);
+                } catch (roleError) {
+                    console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
+                    setCanAssign(false);
+                }
+
+                await refreshWorkItems(user.Title || '');
+            } catch (error) {
+                console.error('TaskBoard: load failed', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadTasks();
+    }, [refreshWorkItems]);
+
+    useEffect(() => {
+        if (activeView === displayedView) return;
+        setIsViewVisible(false);
+        const timer = setTimeout(() => {
+            setDisplayedView(activeView);
+            setIsViewVisible(true);
+        }, 120);
+        return () => clearTimeout(timer);
+    }, [activeView, displayedView]);
+
+    const handleDragEnd = async (result: DropResult): Promise<void> => {
+        const { destination, draggableId } = result;
+        if (!destination) return;
+
+        const draggedItem = workItems.find((item) => item.id === draggableId);
+        if (!draggedItem) return;
+
+        const statuses = getStatusesForType(draggedItem.type);
+        const newStatus = destination.droppableId as WorkItemStatus;
+        if (statuses.indexOf(newStatus) === -1) return;
 
         try {
-          const role = await getUserRole(user.Email || '');
-          setCanAssign(role?.canAssign === true);
-        } catch (roleError) {
-          console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
-          setCanAssign(false);
+            await taskService.updateTask(Number(draggableId), {
+                status: newStatus,
+                requestType: toRequestType(draggedItem.type),
+                severity: draggedItem.severity,
+                impact: draggedItem.impact,
+                affectedService: draggedItem.affectedService,
+            });
+            setWorkItems((current) => reorderTasksAfterDrag(current, result, statuses));
+        } catch (error) {
+            console.error('TaskBoard: drag update failed', error);
         }
+    };
 
-        const data = await taskService.getTasks();
+    const handleTaskClick = (task: Task): void => {
+        setModalTask(task);
+    };
 
-        setTasks(
-          data.map((t: any) => ({
-            id: t.id.toString(),
-            title: t.title,
-            status: toTaskStatus(t.status),
-            priority: t.priority,
-            // Fall back to Albertsdal (main office) for tasks that existed
-            // before the Site column was added to the SharePoint list.
-            site: t.site || 'Albertsdal',
-            assignedTo: t.assignedTo,
-            assignedToId: t.assignedToId,
-            assignedToEmail: t.assignedToEmail,
-            assignedToLoginName: t.assignedToLoginName,
-            startDate: t.startDate,
-            dueDate: t.dueDate,
+    const handleNewTask = (status: WorkItemStatus, type: WorkItemType): void => {
+        const today = getTodayIso();
+        const requestType: TaskRequestType = type === 'incident' ? 'Incident' : 'Task';
+        const draft: Task = {
+            id: `${TEMP_ID_PREFIX}${Date.now()}`,
+            type,
+            title: '',
+            status,
+            priority: 'Medium',
+            site: 'Albertsdal',
+            startDate: today,
+            dueDate: undefined,
             createdAt: new Date().toISOString(),
-            requestType: t.requestType,
-            department: t.department,
-            description: t.description,
-            createdBy: user.Title,
-          }))
-        );
-      } catch (error) {
-        console.error('TaskBoard: load failed', error);
-      } finally {
-        setIsLoading(false);
-      }
+            requestType,
+            department: 'IT',
+            description: '',
+            assignedTo: canAssign ? '' : currentUserName,
+            assignedToEmail: canAssign ? undefined : currentUserEmail,
+            createdBy: currentUserName,
+            severity: undefined,
+            impact: type === 'incident' ? '' : undefined,
+            affectedService: type === 'incident' ? '' : undefined,
+            incidentTypeId: undefined,
+            incidentType: null,
+            slaResponseMinutes: undefined,
+            slaResolutionMinutes: undefined,
+            slaDeadline: undefined,
+            slaStatus: undefined,
+        };
+        setModalTask(draft);
     };
 
-    loadTasks();
-  }, [taskService]);
-
-  // ---------------------------------------------------------------------------
-  // View transition fade
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (activeView === displayedView) return;
-    setIsViewVisible(false);
-    const timer = setTimeout(() => {
-      setDisplayedView(activeView);
-      setIsViewVisible(true);
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [activeView, displayedView]);
-
-  // ---------------------------------------------------------------------------
-  // Drag and drop
-  // ---------------------------------------------------------------------------
-
-  const handleDragEnd = async (result: DropResult): Promise<void> => {
-    const { destination, draggableId } = result;
-    if (!destination) return;
-
-    const newStatus = destination.droppableId as TaskStatus;
-    try {
-      await taskService.updateTask(Number(draggableId), { status: newStatus });
-      setTasks((current) => reorderTasksAfterDrag(current, result));
-    } catch (error) {
-      console.error('TaskBoard: drag update failed', error);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Modal triggers
-  // ---------------------------------------------------------------------------
-
-  const handleTaskClick = (task: Task): void => {
-    setModalTask(task);
-  };
-
-  const handleNewTask = (status: TaskStatus): void => {
-    const today = getTodayIso();
-    const draft: Task = {
-      id: `${TEMP_ID_PREFIX}${Date.now()}`,
-      title: '',
-      status,
-      priority: 'Medium',
-      // New tasks default to the main office. The user can change this in the modal.
-      site: 'Albertsdal',
-      startDate: today,
-      dueDate: undefined,
-      createdAt: new Date().toISOString(),
-      requestType: 'Task',
-      department: 'IT',
-      description: '',
-      assignedTo: canAssign ? '' : currentUserName,
-      assignedToEmail: canAssign ? undefined : currentUserEmail,
-      createdBy: currentUserName,
+    const handleCloseModal = (): void => {
+        setModalTask(null);
     };
-    setModalTask(draft);
-  };
 
-  const handleCloseModal = (): void => {
-    setModalTask(null);
-  };
+    const handleSaveTask = async (task: Task): Promise<Task | null> => {
+        try {
+            const isNew = task.id.startsWith(TEMP_ID_PREFIX);
 
-  // ---------------------------------------------------------------------------
-  // Save — handles both create and update via TaskModal's onSave prop
-  // ---------------------------------------------------------------------------
+            const effectiveTask: Task = !canAssign
+                ? {
+                    ...task,
+                    assignedTo: currentUserName,
+                    assignedToEmail: currentUserEmail,
+                    assignedToId: undefined,
+                    assignedToLoginName: undefined,
+                  }
+                : task;
 
-  const handleSaveTask = async (task: Task): Promise<Task | null> => {
-    try {
-      const isNew = task.id.startsWith(TEMP_ID_PREFIX);
+            let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
+            let finalAssigneeName = effectiveTask.assignedTo || '';
 
-      const effectiveTask: Task = !canAssign
-        ? {
-            ...task,
-            assignedTo: currentUserName,
-            assignedToEmail: currentUserEmail,
-            assignedToId: undefined,
-            assignedToLoginName: undefined,
-          }
-        : task;
+            if (
+                (!finalAssigneeId || finalAssigneeId <= 0) &&
+                (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName)
+            ) {
+                const resolved = await resolveSharePointUserId(
+                    effectiveTask.assignedToEmail || '',
+                    effectiveTask.assignedToLoginName || ''
+                );
+                if (resolved) finalAssigneeId = resolved;
+            }
 
-      let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
-      let finalAssigneeName = effectiveTask.assignedTo || '';
+            if (!finalAssigneeId || finalAssigneeId <= 0) {
+                if (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName || effectiveTask.assignedTo) {
+                    throw new Error('Could not resolve selected user to a SharePoint account. Select a valid user and try again.');
+                }
+                finalAssigneeId = null;
+                finalAssigneeName = '';
+            }
 
-      if (
-        (!finalAssigneeId || finalAssigneeId <= 0) &&
-        (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName)
-      ) {
-        const resolved = await resolveSharePointUserId(
-          effectiveTask.assignedToEmail || '',
-          effectiveTask.assignedToLoginName || ''
-        );
-        if (resolved) finalAssigneeId = resolved;
-      }
+            if (effectiveTask.type === 'incident' && (!effectiveTask.incidentTypeId || !effectiveTask.severity)) {
+                throw new Error('Incident Type is required before an incident can be created.');
+            }
 
-      if (!finalAssigneeId || finalAssigneeId <= 0) {
-        if (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName || effectiveTask.assignedTo) {
-          const message = 'Could not resolve selected user to a SharePoint account. Select a valid user and try again.';
-          console.warn('TaskBoard: could not resolve selected assignee to a SharePoint user ID.', {
-            email: effectiveTask.assignedToEmail,
-            loginName: effectiveTask.assignedToLoginName,
-            name: effectiveTask.assignedTo,
-          });
-          throw new Error(message);
+            const normaliseDate = (value?: string): string => {
+                if (!value) return '';
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+                const parsed = new Date(value);
+                return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
+            };
+
+            const incidentSla = isNew && effectiveTask.type === 'incident' && effectiveTask.severity
+                ? buildIncidentSla(effectiveTask.severity)
+                : null;
+
+            const payload = {
+                title: effectiveTask.title,
+                status: effectiveTask.status,
+                priority: effectiveTask.priority,
+                site: effectiveTask.site || 'Albertsdal',
+                assignedToId: finalAssigneeId,
+                startDate: normaliseDate(effectiveTask.startDate) || getTodayIso(),
+                dueDate: normaliseDate(effectiveTask.dueDate),
+                description: effectiveTask.description || '',
+                requestType: toRequestType(effectiveTask.type),
+                department: effectiveTask.department || 'IT',
+                severity: effectiveTask.type === 'incident' ? effectiveTask.severity : undefined,
+                impact: effectiveTask.type === 'incident' ? effectiveTask.impact || '' : undefined,
+                affectedService: effectiveTask.type === 'incident' ? effectiveTask.affectedService || '' : undefined,
+                incidentTypeId: effectiveTask.type === 'incident' ? effectiveTask.incidentTypeId ?? null : null,
+                incidentType: effectiveTask.type === 'incident' ? effectiveTask.incidentType ?? null : null,
+                slaResponseMinutes: incidentSla?.responseMinutes,
+                slaResolutionMinutes: incidentSla?.resolutionMinutes,
+                slaDeadline: incidentSla?.deadline,
+                slaStatus: incidentSla?.status,
+            };
+
+            if (isNew) {
+                const created = await taskService.createTask(payload);
+                const returnedId: string | undefined = created?.id != null
+                    ? created.id.toString()
+                    : undefined;
+
+                if (!returnedId) {
+                    console.warn('TaskBoard: createTask response did not include an ID; reloading list.', created);
+                    await refreshWorkItems(currentUserName);
+                    return { ...effectiveTask, id: `recovered_${Date.now()}` };
+                }
+
+                const persisted: Task = {
+                    ...effectiveTask,
+                    id: returnedId,
+                    assignedTo: finalAssigneeName,
+                    assignedToId: finalAssigneeId ?? undefined,
+                    startDate: payload.startDate,
+                    dueDate: payload.dueDate,
+                    requestType: toRequestType(effectiveTask.type),
+                    createdBy: currentUserName,
+                    incidentTypeId: effectiveTask.incidentTypeId,
+                    incidentType: effectiveTask.incidentType,
+                    slaResponseMinutes: incidentSla?.responseMinutes,
+                    slaResolutionMinutes: incidentSla?.resolutionMinutes,
+                    slaDeadline: incidentSla?.deadline,
+                    slaStatus: incidentSla?.status,
+                };
+
+                setWorkItems((prev) => [...prev, persisted]);
+                return persisted;
+            }
+
+            await taskService.updateTask(Number(effectiveTask.id), payload);
+
+            const updated: Task = {
+                ...effectiveTask,
+                assignedTo: finalAssigneeName,
+                assignedToId: finalAssigneeId ?? undefined,
+                startDate: payload.startDate,
+                dueDate: payload.dueDate,
+                requestType: toRequestType(effectiveTask.type),
+                incidentTypeId: effectiveTask.incidentTypeId,
+                incidentType: effectiveTask.incidentType,
+            };
+
+            setWorkItems((prev) => prev.map((item) => (item.id === effectiveTask.id ? updated : item)));
+            return updated;
+        } catch (error) {
+            console.error('TaskBoard: saveTask failed', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Could not save work item to SharePoint.');
         }
-        finalAssigneeId = null;
-        finalAssigneeName = '';
-      }
+    };
 
-      const normaliseDate = (value?: string): string => {
-        if (!value) return '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-        const parsed = new Date(value);
-        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
-      };
-
-      const payload = {
-        title: effectiveTask.title,
-        status: effectiveTask.status,
-        priority: effectiveTask.priority,
-        site: effectiveTask.site || 'Albertsdal',
-        assignedToId: finalAssigneeId,
-        startDate: normaliseDate(effectiveTask.startDate) || getTodayIso(),
-        dueDate: normaliseDate(effectiveTask.dueDate),
-        description: effectiveTask.description || '',
-        requestType: effectiveTask.requestType || 'Task',
-        department: effectiveTask.department || 'IT',
-      };
-
-      if (isNew) {
-        const created = await taskService.createTask(payload);
-
-        const returnedId: string | undefined = created?.id != null
-          ? created.id.toString()
-          : undefined;
-
-        if (!returnedId) {
-          console.warn(
-            'TaskBoard: createTask response did not include an ID — item was saved. Reloading.',
-            created
-          );
-
-          const refreshed = await taskService.getTasks();
-          setTasks(
-            refreshed.map((t: any) => ({
-              id: t.id.toString(),
-              title: t.title,
-              status: toTaskStatus(t.status),
-              priority: t.priority,
-              site: t.site || 'Albertsdal',
-              assignedTo: t.assignedTo,
-              assignedToId: t.assignedToId,
-              assignedToEmail: t.assignedToEmail,
-              assignedToLoginName: t.assignedToLoginName,
-              startDate: t.startDate,
-              dueDate: t.dueDate,
-              createdAt: new Date().toISOString(),
-              requestType: t.requestType,
-              department: t.department,
-              description: t.description,
-              createdBy: currentUserName,
-            }))
-          );
-
-          return { ...effectiveTask, id: `recovered_${Date.now()}` };
+    const handleDeleteTask = async (id: string): Promise<void> => {
+        try {
+            if (!id.startsWith(TEMP_ID_PREFIX)) {
+                await taskService.deleteTask(Number(id));
+            }
+            setWorkItems((prev) => prev.filter((item) => item.id !== id));
+        } catch (error) {
+            console.error('TaskBoard: delete failed', error);
         }
+    };
 
-        const persisted: Task = {
-          ...effectiveTask,
-          id: returnedId,
-          assignedTo: finalAssigneeName,
-          assignedToId: finalAssigneeId ?? undefined,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
-          createdBy: currentUserName,
-        };
+    const handleUpdateTask = (id: string, updates: Partial<Task>): void => {
+        let nextUpdates = updates;
+        if (!canAssign && updates.assignedTo !== undefined) {
+            const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
+            nextUpdates = rest;
+        }
+        setWorkItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)));
+    };
 
-        setTasks((prev) => [...prev, persisted]);
-        return persisted;
-
-      } else {
-        await taskService.updateTask(Number(effectiveTask.id), payload);
-
-        const updated: Task = {
-          ...effectiveTask,
-          assignedTo: finalAssigneeName,
-          assignedToId: finalAssigneeId ?? undefined,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
-        };
-
-        setTasks((prev) => prev.map((t) => (t.id === effectiveTask.id ? updated : t)));
-        return updated;
-      }
-
-    } catch (error) {
-      console.error('TaskBoard: saveTask failed', error);
-      if (error instanceof Error) throw error;
-      throw new Error('Could not save task to SharePoint.');
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Delete
-  // ---------------------------------------------------------------------------
-
-  const handleDeleteTask = async (id: string): Promise<void> => {
-    try {
-      if (!id.startsWith(TEMP_ID_PREFIX)) {
-        await taskService.deleteTask(Number(id));
-      }
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (error) {
-      console.error('TaskBoard: delete failed', error);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // TableView per-field update
-  // ---------------------------------------------------------------------------
-
-  const handleUpdateTask = (id: string, updates: Partial<Task>): void => {
-    if (!canAssign && updates.assignedTo !== undefined) {
-      const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
-      updates = rest;
-    }
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
-  };
-
-  // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
-
-  const renderActiveView = (view: ViewKey): React.ReactElement => {
-    if (isLoading) {
-      return (
+    const renderLoadingState = (message: string): React.ReactElement => (
         <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '300px',
-            color: THEME.colors.textSecondary,
-          }}
+            style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '300px',
+                color: THEME.colors.textSecondary,
+                backgroundColor: THEME.colors.panel,
+                border: `1px solid ${THEME.colors.border}`,
+                borderRadius: '16px',
+            }}
         >
-          Loading tasks...
+            {message}
         </div>
-      );
-    }
+    );
 
-    switch (view) {
-      case 'board':
-        return (
-          <BoardView
-            tasks={tasks}
-            statuses={TASK_STATUSES}
-            onTaskClick={handleTaskClick}
-            onNewTask={handleNewTask}
-          />
-        );
-      case 'table':
-        return (
-          <TableView
-            tasks={tasks}
-            statuses={TASK_STATUSES}
-            updateTask={handleUpdateTask}
-            deleteTask={handleDeleteTask}
-            canAssign={canAssign}
-          />
-        );
-      case 'calendar':
-        return (
-          <CalendarView
-            tasks={tasks}
-            onTaskClick={(id) => {
-              const task = tasks.find((t) => t.id === id);
-              if (task) handleTaskClick(task);
-            }}
-          />
-        );
-      case 'gantt':
-        return (
-          <GanttView
-            tasks={tasks}
-            statuses={TASK_STATUSES}
-            onTaskClick={(id) => {
-              const task = tasks.find((t) => t.id === id);
-              if (task) handleTaskClick(task);
-            }}
-          />
-        );
-      case 'chart':
-        return <ChartView tasks={tasks} statuses={TASK_STATUSES} />;
-      default:
-        return <></>;
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
-  return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div style={{ width: '100%', backgroundColor: THEME.colors.background }}>
-
-        {/* Tab bar */}
+    const renderWorkspaceHeader = (title: string, description: string): React.ReactElement => (
         <div
-          style={{
-            display: 'flex',
-            gap: '4px',
-            padding: '12px 16px 0 16px',
-            backgroundColor: THEME.colors.panel,
-            borderBottom: `1px solid ${THEME.colors.border}`,
-          }}
+            style={{
+                backgroundColor: THEME.colors.panel,
+                border: `1px solid ${THEME.colors.border}`,
+                borderRadius: '16px',
+                padding: '20px 24px',
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+            }}
         >
-          {VIEW_TABS.map((tab) => {
-            const isActive = activeView === tab.key;
-            const isHovered = hoveredTab === tab.key;
+            <h1 style={{ margin: 0, fontSize: '24px', color: THEME.colors.textStrong }}>{title}</h1>
+            <p style={{ margin: '8px 0 0 0', color: THEME.colors.textSecondary, fontSize: '14px' }}>
+                {description}
+            </p>
+        </div>
+    );
 
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveView(tab.key)}
-                onMouseEnter={() => setHoveredTab(tab.key)}
-                onMouseLeave={() => setHoveredTab(null)}
+    const renderTaskWorkspaceView = (view: ViewKey): React.ReactElement => {
+        if (isLoading) {
+            return renderLoadingState('Loading tasks...');
+        }
+
+        switch (view) {
+            case 'board':
+                return (
+                    <BoardView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        type="task"
+                        onTaskClick={handleTaskClick}
+                        onNewTask={handleNewTask}
+                    />
+                );
+            case 'table':
+                return (
+                    <TableView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        updateTask={handleUpdateTask}
+                        deleteTask={handleDeleteTask}
+                        canAssign={canAssign}
+                    />
+                );
+            case 'calendar':
+                return (
+                    <CalendarView
+                        tasks={taskItems}
+                        onTaskClick={(id) => {
+                            const task = taskItems.find((item) => item.id === id);
+                            if (task) handleTaskClick(task);
+                        }}
+                    />
+                );
+            case 'gantt':
+                return (
+                    <GanttView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        onTaskClick={(id) => {
+                            const task = taskItems.find((item) => item.id === id);
+                            if (task) handleTaskClick(task);
+                        }}
+                    />
+                );
+            case 'chart':
+                return <ChartView tasks={taskItems} statuses={TASK_STATUSES} />;
+            default:
+                return <></>;
+        }
+    };
+
+    const renderTasksView = (): React.ReactElement => (
+        <div style={{ display: 'grid', gap: '16px' }}>
+            {renderWorkspaceHeader('Tasks', 'Operational planning, delivery tracking, and cross-team execution.')}
+
+            <div
                 style={{
-                  backgroundColor: isActive
-                    ? THEME.colors.primary
-                    : isHovered
-                    ? THEME.colors.primarySoft
-                    : 'transparent',
-                  color: isActive ? '#ffffff' : THEME.colors.textPrimary,
-                  border: isActive
-                    ? `1px solid ${THEME.colors.primary}`
-                    : '1px solid transparent',
-                  borderRadius: '8px',
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  fontWeight: isActive ? 700 : 500,
-                  fontSize: '14px',
-                  transition: 'background-color 160ms ease, color 160ms ease',
+                    backgroundColor: THEME.colors.panel,
+                    border: `1px solid ${THEME.colors.border}`,
+                    borderRadius: '16px',
+                    overflow: 'hidden',
                 }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+            >
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: '4px',
+                        padding: '12px 16px 0 16px',
+                        backgroundColor: THEME.colors.panel,
+                        borderBottom: `1px solid ${THEME.colors.border}`,
+                    }}
+                >
+                    {VIEW_TABS.map((tab) => {
+                        const isActive = activeView === tab.key;
+                        const isHovered = hoveredTab === tab.key;
+
+                        return (
+                            <button
+                                key={tab.key}
+                                type="button"
+                                onClick={() => setActiveView(tab.key)}
+                                onMouseEnter={() => setHoveredTab(tab.key)}
+                                onMouseLeave={() => setHoveredTab(null)}
+                                style={{
+                                    backgroundColor: isActive
+                                        ? THEME.colors.primary
+                                        : isHovered
+                                        ? THEME.colors.primarySoft
+                                        : 'transparent',
+                                    color: isActive ? '#ffffff' : THEME.colors.textPrimary,
+                                    border: isActive
+                                        ? `1px solid ${THEME.colors.primary}`
+                                        : '1px solid transparent',
+                                    borderRadius: '8px',
+                                    padding: '8px 14px',
+                                    cursor: 'pointer',
+                                    fontWeight: isActive ? 700 : 500,
+                                    fontSize: '14px',
+                                    transition: 'background-color 160ms ease, color 160ms ease',
+                                }}
+                            >
+                                {tab.label}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div
+                    style={{
+                        transition: 'opacity 180ms ease, transform 180ms ease',
+                        opacity: isViewVisible ? 1 : 0,
+                        transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
+                    }}
+                >
+                    {renderTaskWorkspaceView(displayedView)}
+                </div>
+            </div>
         </div>
+    );
 
-        {/* View content */}
-        <div
-          style={{
-            transition: 'opacity 180ms ease, transform 180ms ease',
-            opacity: isViewVisible ? 1 : 0,
-            transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
-          }}
-        >
-          {renderActiveView(displayedView)}
-        </div>
-      </div>
+    const renderDashboardView = (): React.ReactElement => {
+        const openTaskCount = taskItems.filter((item) => item.status !== 'Completed').length;
+        const openIncidentCount = incidentItems.filter((item) => item.status !== 'Resolved').length;
+        const criticalIncidentCount = incidentItems.filter((item) => item.severity === 'P1').length;
+        const assignedCount = taskItems.filter((item) => Boolean(item.assignedTo)).length;
 
-      <TaskModal
-        task={modalTask}
-        canAssign={canAssign}
-        siteUrl={context.pageContext.web.absoluteUrl}
-        currentUserName={currentUserName}
-        currentUserSpId={currentUserSpId}
-        onSave={handleSaveTask}
-        onDelete={handleDeleteTask}
-        onClose={handleCloseModal}
-      />
+        if (isLoading) {
+            return renderLoadingState('Loading dashboard...');
+        }
 
-    </DragDropContext>
-  );
+        return (
+            <div style={{ display: 'grid', gap: '16px' }}>
+                {renderWorkspaceHeader('Dashboard', 'Portfolio snapshot across active tasks and operational incidents.')}
+
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '16px',
+                    }}
+                >
+                    {[
+                        { label: 'Open Tasks', value: openTaskCount.toString() },
+                        { label: 'Assigned Tasks', value: assignedCount.toString() },
+                        { label: 'Open Incidents', value: openIncidentCount.toString() },
+                        { label: 'P1 Incidents', value: criticalIncidentCount.toString() },
+                    ].map((card) => (
+                        <div
+                            key={card.label}
+                            style={{
+                                backgroundColor: THEME.colors.panel,
+                                border: `1px solid ${THEME.colors.border}`,
+                                borderRadius: '16px',
+                                padding: '18px 20px',
+                                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+                            }}
+                        >
+                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                {card.label}
+                            </div>
+                            <div style={{ marginTop: '10px', fontSize: '30px', fontWeight: 700, color: THEME.colors.textStrong }}>
+                                {card.value}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div
+                    style={{
+                        backgroundColor: THEME.colors.panel,
+                        border: `1px solid ${THEME.colors.border}`,
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <ChartView tasks={taskItems} statuses={TASK_STATUSES} />
+                </div>
+            </div>
+        );
+    };
+
+    const renderIncidentsView = (): React.ReactElement => {
+        if (isLoading) {
+            return renderLoadingState('Loading incidents...');
+        }
+
+        return (
+            <div style={{ display: 'grid', gap: '16px' }}>
+                {renderWorkspaceHeader('Incidents', 'Track operational disruptions with severity, ownership, and impact context.')}
+                <div
+                    style={{
+                        backgroundColor: THEME.colors.panel,
+                        border: `1px solid ${THEME.colors.border}`,
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <BoardView
+                        tasks={incidentItems}
+                        statuses={INCIDENT_STATUSES}
+                        type="incident"
+                        onTaskClick={handleTaskClick}
+                        onNewTask={handleNewTask}
+                    />
+                </div>
+            </div>
+        );
+    };
+
+    const renderSelectedView = (): React.ReactElement => {
+        switch (selectedView) {
+            case 'dashboard':
+                return renderDashboardView();
+            case 'incidents':
+                return renderIncidentsView();
+            case 'tasks':
+            default:
+                return renderTasksView();
+        }
+    };
+
+    return (
+        <DragDropContext onDragEnd={handleDragEnd}>
+            <AppLayout selectedView={selectedView} onSelectView={setSelectedView}>
+                {renderSelectedView()}
+            </AppLayout>
+
+            <WorkItemModal
+                task={modalTask}
+                canAssign={canAssign}
+                siteUrl={context.pageContext.web.absoluteUrl}
+                context={context}
+                currentUserName={currentUserName}
+                currentUserSpId={currentUserSpId}
+                onSave={handleSaveTask}
+                onDelete={handleDeleteTask}
+                onClose={handleCloseModal}
+            />
+        </DragDropContext>
+    );
 };
 
 export default TaskBoard;

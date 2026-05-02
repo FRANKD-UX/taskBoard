@@ -177,6 +177,7 @@ var CreateTaskModal = function (_a) {
         }
         var draft = {
             id: "".concat(TEMP_ID_PREFIX).concat(Date.now()),
+            type: 'task',
             title: form.title.trim(),
             status: form.status,
             priority: form.priority,
@@ -184,7 +185,7 @@ var CreateTaskModal = function (_a) {
             startDate: form.startDate,
             dueDate: form.dueDate || undefined,
             description: form.description.trim() || undefined,
-            requestType: form.requestType,
+            requestType: form.requestType === 'Incident' ? 'Incident' : 'Task',
             department: form.department,
             createdAt: new Date().toISOString(),
             assignedTo: (_b = assignee === null || assignee === void 0 ? void 0 : assignee.name) !== null && _b !== void 0 ? _b : '',

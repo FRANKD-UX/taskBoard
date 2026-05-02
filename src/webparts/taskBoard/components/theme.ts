@@ -1,5 +1,5 @@
 // theme.ts
-import type { Task, TaskStatus } from './TaskTypes';
+import type { IncidentSeverity, Task, WorkItemStatus } from './TaskTypes';
 
 export const THEME = {
     colors: {
@@ -24,11 +24,21 @@ export const THEME = {
         ThisWeek: '#3b82f6',
         InProgress: '#f59e0b',
         Completed: '#22c55e',
-    } as Record<TaskStatus, string>,
+        New: '#dc2626',
+        Investigating: '#d97706',
+        Resolved: '#16a34a',
+    } as Record<WorkItemStatus, string>,
 
     priorityColors: {
         Low: '#22c55e',
         Medium: '#f59e0b',
         High: '#ef4444',
     } as Record<Task['priority'], string>,
+
+    severityColors: {
+        P1: '#dc2626',
+        P2: '#ea580c',
+        P3: '#2563eb',
+        P4: '#64748b',
+    } as Record<IncidentSeverity, string>,
 };

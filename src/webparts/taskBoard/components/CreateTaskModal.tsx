@@ -229,6 +229,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
 
         const draft: Task = {
             id: `${TEMP_ID_PREFIX}${Date.now()}`,
+            type: 'task',
             title: form.title.trim(),
             status: form.status,
             priority: form.priority,
@@ -236,7 +237,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
             startDate: form.startDate,
             dueDate: form.dueDate || undefined,
             description: form.description.trim() || undefined,
-            requestType: form.requestType,
+            requestType: form.requestType === 'Incident' ? 'Incident' : 'Task',
             department: form.department,
             createdAt: new Date().toISOString(),
             assignedTo: assignee?.name ?? '',

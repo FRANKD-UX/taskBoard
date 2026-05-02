@@ -7,10 +7,27 @@ export type TaskStatus =
     | 'InProgress'
     | 'Completed';
 
+export type IncidentStatus =
+    | 'New'
+    | 'Investigating'
+    | 'Resolved';
+
+export type WorkItemStatus = TaskStatus | IncidentStatus;
+
 export type TaskPriority =
     | 'Low'
     | 'Medium'
     | 'High';
+
+export type IncidentSeverity =
+    | 'P1'
+    | 'P2'
+    | 'P3'
+    | 'P4';
+
+export type WorkItemType =
+    | 'task'
+    | 'incident';
 
 export type TaskRequestType =
     | 'Task'
@@ -42,6 +59,16 @@ export interface ICollaborator {
     loginName: string;
 }
 
+export interface IIncidentType {
+    id: number;
+    title: string;
+    severity: IncidentSeverity;
+    department?: string;
+    isActive?: boolean;
+}
+
+export type IncidentSlaStatus = 'OnTrack' | 'AtRisk' | 'Breached' | 'Resolved';
+
 // A full collaboration request row from the TaskCollaborators SP list.
 export interface ICollaborationRequest {
     // The SP list item ID of this request row.
@@ -57,9 +84,10 @@ export interface ICollaborationRequest {
 
 export interface Task {
     id: string;
+    type: WorkItemType;
 
     title: string;
-    status: TaskStatus;
+    status: WorkItemStatus;
     priority: TaskPriority;
 
     // The office site this task originates from.
@@ -67,7 +95,7 @@ export interface Task {
     site: TaskSite;
 
     assignedTo?: string;
-    assignedToId?: number;
+    assignedToId?: number | null;
 
     /**
      * The user's email / UPN e.g. "lekau@company.com".
@@ -85,11 +113,20 @@ export interface Task {
     dueDate?: string;
     createdAt: string;
 
-    requestType: string;
+    requestType: TaskRequestType;
     department: string;
 
     description?: string;
     createdBy?: string;
+    severity?: IncidentSeverity;
+    impact?: string;
+    affectedService?: string;
+    incidentTypeId?: number | null;
+    incidentType?: IIncidentType | null;
+    slaResponseMinutes?: number;
+    slaResolutionMinutes?: number;
+    slaDeadline?: string;
+    slaStatus?: IncidentSlaStatus;
 
     // Accepted collaborators — populated from the Collaborators multi-person
     // column on the Tasks list. Used to render "In Collaboration With".
@@ -98,6 +135,7 @@ export interface Task {
 
 export interface ITask {
     id: number;
+    type: WorkItemType;
 
     title: string;
     status: string;
@@ -105,15 +143,27 @@ export interface ITask {
     site: string;
 
     assignedTo?: string;
-    assignedToId?: number;
+    assignedToId?: number | null;
+    assignedToEmail?: string;
+    assignedToLoginName?: string;
 
     startDate?: string;
     dueDate?: string;
+    createdAt?: string;
 
     description?: string;
-    requestType: string;
+    requestType: TaskRequestType;
     department: string;
     createdBy?: string;
+    severity?: IncidentSeverity;
+    impact?: string;
+    affectedService?: string;
+    incidentTypeId?: number | null;
+    incidentType?: IIncidentType | null;
+    slaResponseMinutes?: number;
+    slaResolutionMinutes?: number;
+    slaDeadline?: string;
+    slaStatus?: IncidentSlaStatus;
 
     collaborators?: ICollaborator[];
 }
