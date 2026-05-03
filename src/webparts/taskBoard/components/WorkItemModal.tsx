@@ -359,6 +359,10 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                 if (isMounted) {
                     console.log('WorkItemModal: mapped IncidentTypes', data);
                     setIncidentTypes(data);
+                    // Auto-select the first incident type if none is already selected
+                    if (data.length > 0 && selectedIncidentTypeId == null) {
+                        setSelectedIncidentTypeId(data[0].Id);
+                    }
                 }
             } catch (error) {
                 console.error('WorkItemModal: failed to load IncidentTypes', error);
@@ -469,7 +473,6 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             severity: matchingIncidentType.Severity as IncidentSeverity,
         });
         setSeverity(matchingIncidentType.Severity as IncidentSeverity);
-        setSeverity(matchingIncidentType.Severity as IncidentSeverity);
         setDraft((previous) => {
             if (!previous || previous.type !== 'incident') return previous;
             return {
@@ -567,7 +570,9 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             return;
         }
 
-        if (draft.type === 'incident' && !selectedIncidentTypeId) {
+        // Use the effective ID: selectedIncidentTypeId (state) or draft.incidentTypeId (updated synchronously)
+        const effectiveIncidentTypeId = selectedIncidentTypeId ?? draft.incidentTypeId;
+        if (draft.type === 'incident' && !effectiveIncidentTypeId) {
             setIncidentTypeError('Incident Type is required');
             return;
         }
@@ -580,7 +585,7 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                 ? {
                     ...draft,
                     requestType: 'Incident',
-                    incidentTypeId: selectedIncidentTypeId ?? undefined,
+                    incidentTypeId: effectiveIncidentTypeId ?? undefined,
                     incidentType: null,
                     severity: (severity || selectedIncidentType?.severity || draft.severity) as IncidentSeverity | undefined,
                     impact: (draft.impact || '').trim(),

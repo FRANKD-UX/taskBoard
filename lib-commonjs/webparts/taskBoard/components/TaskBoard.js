@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
+// TaskBoard.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var react_beautiful_dnd_1 = require("react-beautiful-dnd");
@@ -15,6 +16,7 @@ var theme_1 = require("./theme");
 var WorkItemModal_1 = tslib_1.__importDefault(require("./WorkItemModal"));
 var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var TaskService_1 = require("../../../services/TaskService");
+var NotificationService_1 = require("../../../services/NotificationService");
 var UserRoleService_1 = require("../../../services/UserRoleService");
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
@@ -105,90 +107,43 @@ var reorderTasksAfterDrag = function (tasks, result, statuses) {
     var reorderedIds = new Set(reorderedRelevantTasks.map(function (task) { return task.id; }));
     return tslib_1.__spreadArray(tslib_1.__spreadArray([], tasks.filter(function (task) { return !reorderedIds.has(task.id); }), true), reorderedRelevantTasks, true);
 };
-var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var sp, normalizedEmail, normalizedLoginName, tryEnsure, user, _a, claimId, ensuredLoginId, lower, claimId, maybeEmail, user, _b;
-    var _c;
-    return tslib_1.__generator(this, function (_d) {
-        switch (_d.label) {
+/**
+ * Helper: resolve a user's display name from a SharePoint user ID.
+ * This is a fallback when the initial query doesn't expand the AssignedTo person field.
+ */
+var resolveUserNameFromId = function (userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var sp, user, _a, userInfo, _b;
+    return tslib_1.__generator(this, function (_c) {
+        switch (_c.label) {
             case 0:
                 sp = (0, pnpjsConfig_1.getSP)();
-                normalizedEmail = (email || '').trim();
-                normalizedLoginName = (loginName || '').trim();
-                tryEnsure = function (value) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-                    var ensured, ensuredAny, _a;
-                    var _b, _c, _d;
-                    return tslib_1.__generator(this, function (_e) {
-                        switch (_e.label) {
-                            case 0:
-                                if (!value)
-                                    return [2 /*return*/, null];
-                                _e.label = 1;
-                            case 1:
-                                _e.trys.push([1, 3, , 4]);
-                                return [4 /*yield*/, sp.web.ensureUser(value)];
-                            case 2:
-                                ensured = _e.sent();
-                                ensuredAny = ensured;
-                                return [2 /*return*/, (_d = (_b = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.Id) !== null && _b !== void 0 ? _b : (_c = ensuredAny === null || ensuredAny === void 0 ? void 0 : ensuredAny.data) === null || _c === void 0 ? void 0 : _c.Id) !== null && _d !== void 0 ? _d : null];
-                            case 3:
-                                _a = _e.sent();
-                                return [2 /*return*/, null];
-                            case 4: return [2 /*return*/];
-                        }
-                    });
-                }); };
-                if (!normalizedEmail) return [3 /*break*/, 6];
-                _d.label = 1;
+                _c.label = 1;
             case 1:
-                _d.trys.push([1, 3, , 4]);
-                return [4 /*yield*/, sp.web.siteUsers.getByEmail(normalizedEmail)()];
+                _c.trys.push([1, 3, , 8]);
+                return [4 /*yield*/, sp.web.siteUsers.getById(userId)()];
             case 2:
-                user = _d.sent();
-                if (user === null || user === void 0 ? void 0 : user.Id)
-                    return [2 /*return*/, user.Id];
-                return [3 /*break*/, 4];
+                user = _c.sent();
+                return [2 /*return*/, (user === null || user === void 0 ? void 0 : user.Title) || null];
             case 3:
-                _a = _d.sent();
-                return [3 /*break*/, 4];
-            case 4: return [4 /*yield*/, tryEnsure("i:0#.f|membership|".concat(normalizedEmail))];
+                _a = _c.sent();
+                _c.label = 4;
+            case 4:
+                _c.trys.push([4, 6, , 7]);
+                return [4 /*yield*/, sp.web.siteUserInfoList.items
+                        .filter("Id eq ".concat(userId))
+                        .select('Id,Title')
+                        .top(1)()];
             case 5:
-                claimId = _d.sent();
-                if (claimId)
-                    return [2 /*return*/, claimId];
-                _d.label = 6;
+                userInfo = _c.sent();
+                if (userInfo && userInfo.length > 0) {
+                    return [2 /*return*/, userInfo[0].Title];
+                }
+                return [3 /*break*/, 7];
             case 6:
-                if (!normalizedLoginName) return [3 /*break*/, 13];
-                return [4 /*yield*/, tryEnsure(normalizedLoginName)];
-            case 7:
-                ensuredLoginId = _d.sent();
-                if (ensuredLoginId)
-                    return [2 /*return*/, ensuredLoginId];
-                lower = normalizedLoginName.toLowerCase();
-                if (!(lower.indexOf('@') > -1 && lower.indexOf('|') === -1)) return [3 /*break*/, 9];
-                return [4 /*yield*/, tryEnsure("i:0#.f|membership|".concat(normalizedLoginName))];
-            case 8:
-                claimId = _d.sent();
-                if (claimId)
-                    return [2 /*return*/, claimId];
-                _d.label = 9;
-            case 9:
-                maybeEmail = lower.indexOf('|') > -1
-                    ? ((_c = normalizedLoginName.split('|').pop()) === null || _c === void 0 ? void 0 : _c.trim()) || ''
-                    : '';
-                if (!maybeEmail) return [3 /*break*/, 13];
-                _d.label = 10;
-            case 10:
-                _d.trys.push([10, 12, , 13]);
-                return [4 /*yield*/, sp.web.siteUsers.getByEmail(maybeEmail)()];
-            case 11:
-                user = _d.sent();
-                if (user === null || user === void 0 ? void 0 : user.Id)
-                    return [2 /*return*/, user.Id];
-                return [3 /*break*/, 13];
-            case 12:
-                _b = _d.sent();
-                return [3 /*break*/, 13];
-            case 13: return [2 /*return*/, null];
+                _b = _c.sent();
+                return [3 /*break*/, 7];
+            case 7: return [2 /*return*/, null];
+            case 8: return [2 /*return*/];
         }
     });
 }); };
@@ -212,102 +167,198 @@ var TaskBoard = function (_a) {
     (0, react_1.useEffect)(function () {
         window.spfxContext = context;
     }, [context]);
-    var mapServiceItemToTask = React.useCallback(function (item, createdByFallback) {
+    var mapServiceItemToTask = React.useCallback(function (item, createdByFallback) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var type, priority, assignedToName, userId, resolvedName;
+        var _a, _b, _c;
+        return tslib_1.__generator(this, function (_d) {
+            switch (_d.label) {
+                case 0:
+                    type = item.type || toWorkItemType(item.requestType);
+                    priority = type === 'incident' && item.severity
+                        ? (0, incidentSla_1.getPriorityFromSeverity)(item.severity)
+                        : toTaskPriority(item.priority);
+                    assignedToName = '';
+                    if (item.assignedTo) {
+                        // If it's an object (full expand), extract Title.
+                        if (typeof item.assignedTo === 'object') {
+                            assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
+                        }
+                        else {
+                            assignedToName = String(item.assignedTo);
+                        }
+                    }
+                    if (!!assignedToName) return [3 /*break*/, 2];
+                    userId = item.assignedToId;
+                    if (!(userId && userId > 0)) return [3 /*break*/, 2];
+                    return [4 /*yield*/, resolveUserNameFromId(userId)];
+                case 1:
+                    resolvedName = _d.sent();
+                    if (resolvedName)
+                        assignedToName = resolvedName;
+                    _d.label = 2;
+                case 2:
+                    // If still empty and we have an email, fallback to email prefix.
+                    if (!assignedToName && item.assignedToEmail) {
+                        assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
+                    }
+                    return [2 /*return*/, {
+                            id: item.id.toString(),
+                            type: type,
+                            title: item.title,
+                            status: toWorkItemStatus(item.status, type),
+                            priority: priority,
+                            site: toTaskSite(item.site),
+                            assignedTo: assignedToName,
+                            assignedToUser: assignedToName ? {
+                                id: (_a = item.assignedToId) !== null && _a !== void 0 ? _a : null,
+                                name: assignedToName,
+                                email: (_b = item.assignedToEmail) !== null && _b !== void 0 ? _b : '',
+                            } : undefined,
+                            assignedToId: (_c = item.assignedToId) !== null && _c !== void 0 ? _c : undefined,
+                            assignedToEmail: item.assignedToEmail,
+                            assignedToLoginName: item.assignedToLoginName,
+                            startDate: item.startDate,
+                            dueDate: item.dueDate,
+                            createdAt: item.createdAt || new Date().toISOString(),
+                            requestType: toRequestType(type),
+                            department: item.department || 'IT',
+                            description: item.description,
+                            createdBy: item.createdBy || createdByFallback,
+                            severity: item.severity,
+                            impact: item.impact,
+                            affectedService: item.affectedService,
+                            incidentTypeId: item.incidentTypeId,
+                            incidentType: item.incidentType,
+                            slaResponseMinutes: item.slaResponseMinutes,
+                            slaResolutionMinutes: item.slaResolutionMinutes,
+                            responseDueDate: item.responseDueDate,
+                            resolutionDueDate: item.resolutionDueDate,
+                            slaDeadline: item.slaDeadline,
+                            slaStatus: item.slaStatus,
+                        }];
+            }
+        });
+    }); }, []);
+    // Load tasks and resolve missing user names
+    var loadAndMapTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var sp, user_1, items, mappedTasks, error_1;
         var _a;
-        var type = item.type || toWorkItemType(item.requestType);
-        var priority = type === 'incident' && item.severity
-            ? (0, incidentSla_1.getPriorityFromSeverity)(item.severity)
-            : toTaskPriority(item.priority);
-        return {
-            id: item.id.toString(),
-            type: type,
-            title: item.title,
-            status: toWorkItemStatus(item.status, type),
-            priority: priority,
-            site: toTaskSite(item.site),
-            assignedTo: item.assignedTo,
-            assignedToUser: item.assignedToUser,
-            assignedToId: (_a = item.assignedToId) !== null && _a !== void 0 ? _a : undefined,
-            assignedToEmail: item.assignedToEmail,
-            assignedToLoginName: item.assignedToLoginName,
-            startDate: item.startDate,
-            dueDate: item.dueDate,
-            createdAt: item.createdAt || new Date().toISOString(),
-            requestType: toRequestType(type),
-            department: item.department || 'IT',
-            description: item.description,
-            createdBy: item.createdBy || createdByFallback,
-            severity: item.severity,
-            impact: item.impact,
-            affectedService: item.affectedService,
-            incidentTypeId: item.incidentTypeId,
-            incidentType: item.incidentType,
-            slaResponseMinutes: item.slaResponseMinutes,
-            slaResolutionMinutes: item.slaResolutionMinutes,
-            responseDueDate: item.responseDueDate,
-            resolutionDueDate: item.resolutionDueDate,
-            slaDeadline: item.slaDeadline,
-            slaStatus: item.slaStatus,
-        };
-    }, []);
+        return tslib_1.__generator(this, function (_b) {
+            switch (_b.label) {
+                case 0:
+                    if (!taskService)
+                        return [2 /*return*/];
+                    _b.label = 1;
+                case 1:
+                    _b.trys.push([1, 5, , 6]);
+                    sp = (0, pnpjsConfig_1.getSP)();
+                    return [4 /*yield*/, sp.web.currentUser()];
+                case 2:
+                    user_1 = _b.sent();
+                    setCurrentUserName(user_1.Title || '');
+                    setCurrentUserEmail(user_1.Email || '');
+                    setCurrentUserSpId((_a = user_1.Id) !== null && _a !== void 0 ? _a : null);
+                    return [4 /*yield*/, taskService.getTasks()];
+                case 3:
+                    items = _b.sent();
+                    return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, user_1.Title || ''); }))];
+                case 4:
+                    mappedTasks = _b.sent();
+                    setWorkItems(mappedTasks);
+                    return [3 /*break*/, 6];
+                case 5:
+                    error_1 = _b.sent();
+                    console.error('TaskBoard: load failed', error_1);
+                    return [3 /*break*/, 6];
+                case 6: return [2 /*return*/];
+            }
+        });
+    }); };
+    // Initial load
     (0, react_1.useEffect)(function () {
-        var loadTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var sp, user_1, role, roleError_1, items, error_1;
+        var initialize = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+            var sp, user, role, roleError_1, notificationService, error_2;
             var _a;
             return tslib_1.__generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
-                        if (!taskService)
-                            return [2 /*return*/];
-                        _b.label = 1;
-                    case 1:
-                        _b.trys.push([1, 9, 10, 11]);
+                        _b.trys.push([0, 8, 9, 10]);
                         setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
+                    case 1:
+                        user = _b.sent();
+                        setCurrentUserName(user.Title || '');
+                        setCurrentUserEmail(user.Email || '');
+                        setCurrentUserSpId((_a = user.Id) !== null && _a !== void 0 ? _a : null);
+                        _b.label = 2;
                     case 2:
-                        user_1 = _b.sent();
-                        setCurrentUserName(user_1.Title || '');
-                        setCurrentUserEmail(user_1.Email || '');
-                        setCurrentUserSpId((_a = user_1.Id) !== null && _a !== void 0 ? _a : null);
-                        _b.label = 3;
+                        _b.trys.push([2, 4, , 5]);
+                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user.Email || '')];
                     case 3:
-                        _b.trys.push([3, 5, , 6]);
-                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user_1.Email || '')];
-                    case 4:
                         role = _b.sent();
                         setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
-                        return [3 /*break*/, 6];
-                    case 5:
+                        return [3 /*break*/, 5];
+                    case 4:
                         roleError_1 = _b.sent();
                         console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError_1);
                         setCanAssign(false);
-                        return [3 /*break*/, 6];
-                    case 6:
-                        console.log('LOAD: starting task loading process');
+                        return [3 /*break*/, 5];
+                    case 5:
+                        notificationService = new NotificationService_1.NotificationService(context);
+                        taskService.setNotificationService(notificationService);
                         return [4 /*yield*/, taskService.checkAndEscalateSLAs()];
+                    case 6:
+                        _b.sent();
+                        return [4 /*yield*/, loadAndMapTasks()];
                     case 7:
-                        _b.sent(); // Ensure SLA evaluation runs before fetching tasks
-                        console.log('LOAD: SLA evaluation completed successfully');
-                        return [4 /*yield*/, taskService.getTasks()];
+                        _b.sent(); // <-- now uses async mapping with user resolution
+                        return [3 /*break*/, 10];
                     case 8:
-                        items = _b.sent();
-                        console.log('LOAD: fetched tasks', items);
-                        setWorkItems(items.map(function (item) { return mapServiceItemToTask(item, user_1.Title || ''); }));
-                        return [3 /*break*/, 11];
+                        error_2 = _b.sent();
+                        console.error('TaskBoard: initial load failed', error_2);
+                        return [3 /*break*/, 10];
                     case 9:
-                        error_1 = _b.sent();
-                        console.error('TaskBoard: load failed', error_1);
-                        return [3 /*break*/, 11];
-                    case 10:
                         setIsLoading(false);
                         return [7 /*endfinally*/];
-                    case 11: return [2 /*return*/];
+                    case 10: return [2 /*return*/];
                 }
             });
         }); };
-        loadTasks();
-    }, [mapServiceItemToTask, taskService]);
+        initialize();
+    }, [context]); // context is stable enough for initial load
+    // Periodic refresh
+    (0, react_1.useEffect)(function () {
+        if (isLoading || !currentUserName)
+            return;
+        var interval = setInterval(function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+            var items, mapped, error_3;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _a.trys.push([0, 4, , 5]);
+                        return [4 /*yield*/, taskService.checkAndEscalateSLAs()];
+                    case 1:
+                        _a.sent();
+                        return [4 /*yield*/, taskService.getTasks()];
+                    case 2:
+                        items = _a.sent();
+                        return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }))];
+                    case 3:
+                        mapped = _a.sent();
+                        setWorkItems(mapped);
+                        return [3 /*break*/, 5];
+                    case 4:
+                        error_3 = _a.sent();
+                        console.error('Periodic refresh failed', error_3);
+                        return [3 /*break*/, 5];
+                    case 5: return [2 /*return*/];
+                }
+            });
+        }); }, 60000);
+        return function () { return clearInterval(interval); };
+    }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
+    // View switch animation
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;
@@ -319,7 +370,7 @@ var TaskBoard = function (_a) {
         return function () { return clearTimeout(timer); };
     }, [activeView, displayedView]);
     var handleDragEnd = function (result) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var destination, draggableId, draggedItem, statuses, newStatus, error_2;
+        var destination, draggableId, draggedItem, statuses, newStatus, error_4;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -348,8 +399,8 @@ var TaskBoard = function (_a) {
                     setWorkItems(function (current) { return reorderTasksAfterDrag(current, result, statuses); });
                     return [3 /*break*/, 4];
                 case 3:
-                    error_2 = _a.sent();
-                    console.error('TaskBoard: drag update failed', error_2);
+                    error_4 = _a.sent();
+                    console.error('TaskBoard: drag update failed', error_4);
                     return [3 /*break*/, 4];
                 case 4: return [2 /*return*/];
             }
@@ -395,12 +446,12 @@ var TaskBoard = function (_a) {
         setModalTask(null);
     };
     var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var isNew, existingTask, effectiveTask_1, finalAssigneeId, finalAssigneeName, resolved, incidentType, incidentTypeId, derivedSeverity, derivedPriority, derivedDepartment, normaliseDate, shouldRebuildIncidentSla, incidentSla, payload, created, returnedId, items, persisted_1, updated_1, error_3;
+        var isNew, existingTask, effectiveTask_1, finalAssigneeId, finalAssigneeName, resolved, incidentType, incidentTypeId, derivedSeverity, derivedPriority, derivedDepartment, normaliseDate, shouldRebuildIncidentSla, incidentSla, payload, created, returnedId, items, mapped, persisted_1, updated_1, error_5;
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         return tslib_1.__generator(this, function (_o) {
             switch (_o.label) {
                 case 0:
-                    _o.trys.push([0, 8, , 9]);
+                    _o.trys.push([0, 9, , 10]);
                     isNew = task.id.startsWith(TEMP_ID_PREFIX);
                     existingTask = isNew ? null : (_a = workItems.find(function (item) { return item.id === task.id; })) !== null && _a !== void 0 ? _a : null;
                     effectiveTask_1 = !canAssign
@@ -481,42 +532,44 @@ var TaskBoard = function (_a) {
                         slaDeadline: (_l = incidentSla === null || incidentSla === void 0 ? void 0 : incidentSla.deadline) !== null && _l !== void 0 ? _l : effectiveTask_1.slaDeadline,
                         slaStatus: (_m = incidentSla === null || incidentSla === void 0 ? void 0 : incidentSla.status) !== null && _m !== void 0 ? _m : effectiveTask_1.slaStatus,
                     };
-                    if (!isNew) return [3 /*break*/, 6];
+                    if (!isNew) return [3 /*break*/, 7];
                     return [4 /*yield*/, taskService.createTask(payload)];
                 case 3:
                     created = _o.sent();
                     returnedId = (created === null || created === void 0 ? void 0 : created.id) != null
                         ? created.id.toString()
                         : undefined;
-                    if (!!returnedId) return [3 /*break*/, 5];
-                    console.warn('TaskBoard: createTask response did not include an ID; reloading list.', created);
+                    if (!!returnedId) return [3 /*break*/, 6];
                     return [4 /*yield*/, taskService.getTasks()];
                 case 4:
                     items = _o.sent();
-                    setWorkItems(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }));
-                    return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, effectiveTask_1), { id: "recovered_".concat(Date.now()) })];
+                    return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }))];
                 case 5:
+                    mapped = _o.sent();
+                    setWorkItems(mapped);
+                    return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, effectiveTask_1), { id: "recovered_".concat(Date.now()) })];
+                case 6:
                     persisted_1 = tslib_1.__assign(tslib_1.__assign({}, effectiveTask_1), { id: returnedId, priority: derivedPriority, assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, requestType: toRequestType(effectiveTask_1.type), createdBy: currentUserName, department: derivedDepartment, severity: derivedSeverity, incidentTypeId: incidentTypeId, incidentType: incidentType, slaResponseMinutes: payload.slaResponseMinutes, slaResolutionMinutes: payload.slaResolutionMinutes, responseDueDate: payload.responseDueDate, resolutionDueDate: payload.resolutionDueDate, slaDeadline: payload.slaDeadline, slaStatus: payload.slaStatus });
                     setWorkItems(function (prev) { return tslib_1.__spreadArray(tslib_1.__spreadArray([], prev, true), [persisted_1], false); });
                     return [2 /*return*/, persisted_1];
-                case 6: return [4 /*yield*/, taskService.updateTask(Number(effectiveTask_1.id), payload)];
-                case 7:
+                case 7: return [4 /*yield*/, taskService.updateTask(Number(effectiveTask_1.id), payload)];
+                case 8:
                     _o.sent();
                     updated_1 = tslib_1.__assign(tslib_1.__assign({}, effectiveTask_1), { priority: derivedPriority, assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, requestType: toRequestType(effectiveTask_1.type), department: derivedDepartment, severity: derivedSeverity, incidentTypeId: incidentTypeId, incidentType: incidentType, slaResponseMinutes: payload.slaResponseMinutes, slaResolutionMinutes: payload.slaResolutionMinutes, responseDueDate: payload.responseDueDate, resolutionDueDate: payload.resolutionDueDate, slaDeadline: payload.slaDeadline, slaStatus: payload.slaStatus });
                     setWorkItems(function (prev) { return prev.map(function (item) { return (item.id === effectiveTask_1.id ? updated_1 : item); }); });
                     return [2 /*return*/, updated_1];
-                case 8:
-                    error_3 = _o.sent();
-                    console.error('TaskBoard: saveTask failed', error_3);
-                    if (error_3 instanceof Error)
-                        throw error_3;
+                case 9:
+                    error_5 = _o.sent();
+                    console.error('TaskBoard: saveTask failed', error_5);
+                    if (error_5 instanceof Error)
+                        throw error_5;
                     throw new Error('Could not save work item to SharePoint.');
-                case 9: return [2 /*return*/];
+                case 10: return [2 /*return*/];
             }
         });
     }); };
     var handleDeleteTask = function (id) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var error_4;
+        var error_6;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -530,8 +583,8 @@ var TaskBoard = function (_a) {
                     setWorkItems(function (prev) { return prev.filter(function (item) { return item.id !== id; }); });
                     return [3 /*break*/, 4];
                 case 3:
-                    error_4 = _a.sent();
-                    console.error('TaskBoard: delete failed', error_4);
+                    error_6 = _a.sent();
+                    console.error('TaskBoard: delete failed', error_6);
                     return [3 /*break*/, 4];
                 case 4: return [2 /*return*/];
             }

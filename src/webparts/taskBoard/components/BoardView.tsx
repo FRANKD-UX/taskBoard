@@ -1,3 +1,4 @@
+// BoardView.tsx
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Draggable, Droppable } from 'react-beautiful-dnd';
@@ -81,6 +82,84 @@ const formatDisplayDate = (value?: string): string => {
     return isNaN(parsed.getTime()) ? 'No date' : parsed.toISOString().split('T')[0];
 };
 
+// ──────────────────────────────────────────────
+// SLA helpers
+// ──────────────────────────────────────────────
+
+const AT_RISK_REMAINING_HOURS = 1; // change to adjust when "AtRisk" appears
+
+const getSlaStatusColor = (status: string): string => {
+    switch (status) {
+        case 'OnTrack': return '#22c55e';
+        case 'AtRisk':  return '#f59e0b';
+        case 'Breached': return '#ef4444';
+        case 'Resolved': return '#3b82f6';
+        default:         return '#6b7280';
+    }
+};
+
+/**
+ * Returns the live SLA status based on the resolution deadline.
+ * Falls back to the stored slaStatus from SharePoint if dates are missing.
+ */
+const computeSlaStatus = (
+    resolutionDueDate?: string,
+    storedSlaStatus?: string
+): string | undefined => {
+    // If we have a resolution due date, calculate live status
+    if (resolutionDueDate) {
+        const deadline = new Date(resolutionDueDate).getTime();
+        if (isNaN(deadline)) return storedSlaStatus;
+        const now = Date.now();
+        if (now > deadline) return 'Breached';
+
+        const remainingMs = deadline - now;
+        if (remainingMs <= AT_RISK_REMAINING_HOURS * 60 * 60 * 1000) return 'AtRisk';
+        return 'OnTrack';
+    }
+    // No due date – fall back to SP stored value
+    return storedSlaStatus;
+};
+
+/**
+ * Formats a time-in-milliseconds into a human-readable countdown string.
+ * e.g. "2h 15m", "45m", "10s"
+ */
+const formatCountdown = (ms: number): string => {
+    if (ms <= 0) return 'Overdue';
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+};
+
+/**
+ * Resolves the remaining time until the resolution deadline.
+ * Returns the countdown string, or null if no resolutionDueDate.
+ */
+const getRemainingTime = (resolutionDueDate?: string): string | null => {
+    if (!resolutionDueDate) return null;
+    const deadline = new Date(resolutionDueDate).getTime();
+    if (isNaN(deadline)) return null;
+    const now = Date.now();
+    const diff = deadline - now;
+    return formatCountdown(diff);
+};
+
+const formatResolutionHours = (minutes?: number): string | null => {
+    if (minutes === undefined || minutes === null || minutes <= 0) return null;
+    const hours = minutes / 60;
+    const display = hours % 1 === 0 ? hours.toString() : hours.toFixed(1);
+    return `${display}h`;
+};
+
+// ──────────────────────────────────────────────
+// Grouping logic
+// ──────────────────────────────────────────────
 
 const groupTasksByStatus = (
     tasks: Task[],
@@ -102,6 +181,10 @@ const groupTasksByStatus = (
     return grouped;
 };
 
+// ──────────────────────────────────────────────
+// Component
+// ──────────────────────────────────────────────
+
 const BoardView: React.FC<IBoardViewProps> = ({
     tasks,
     statuses,
@@ -113,6 +196,13 @@ const BoardView: React.FC<IBoardViewProps> = ({
     const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
     const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
     const [enteringTaskIds, setEnteringTaskIds] = useState<Record<string, boolean>>({});
+
+    // Tick state for re-rendering every second (drives countdown updates)
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const interval = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         if (Object.keys(enteringTaskIds).length === 0) return;
@@ -234,6 +324,11 @@ const BoardView: React.FC<IBoardViewProps> = ({
                                                     const baseStyle = dragProvided.draggableProps.style as React.CSSProperties;
                                                     const assigneeName = task.assignedTo || 'Unassigned';
                                                     const slaLabel = getSlaLabel(task.severity);
+                                                    const resolutionHours = formatResolutionHours(task.slaResolutionMinutes);
+
+                                                    // Live SLA status
+                                                    const liveStatus = computeSlaStatus(task.resolutionDueDate, task.slaStatus);
+                                                    const remainingTime = getRemainingTime(task.resolutionDueDate);
 
                                                     const dragStyle: React.CSSProperties = dragSnapshot.isDragging
                                                         ? {
@@ -405,6 +500,50 @@ const BoardView: React.FC<IBoardViewProps> = ({
                                                                     >
                                                                         {task.impact || 'Impact details pending'}
                                                                     </span>
+
+                                                                    {/* ── SLA status + countdown ── */}
+                                                                    {(liveStatus || resolutionHours || remainingTime) && (
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            flexWrap: 'wrap',
+                                                                            justifyContent: 'space-between',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px',
+                                                                        }}>
+                                                                            {liveStatus && (
+                                                                                <span style={{
+                                                                                    fontSize: '11px',
+                                                                                    fontWeight: 600,
+                                                                                    color: '#ffffff',
+                                                                                    backgroundColor: getSlaStatusColor(liveStatus),
+                                                                                    borderRadius: '999px',
+                                                                                    padding: '1px 8px',
+                                                                                }}>
+                                                                                    {liveStatus}
+                                                                                </span>
+                                                                            )}
+                                                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                                                {remainingTime && (
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        fontWeight: 600,
+                                                                                        color: THEME.colors.textSecondary,
+                                                                                    }}>
+                                                                                        ⏳ {remainingTime}
+                                                                                    </span>
+                                                                                )}
+                                                                                {resolutionHours && (
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        fontWeight: 600,
+                                                                                        color: THEME.colors.textSecondary,
+                                                                                    }}>
+                                                                                        ⏱ {resolutionHours}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <div

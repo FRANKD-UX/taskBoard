@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
+// BoardView.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var react_beautiful_dnd_1 = require("react-beautiful-dnd");
@@ -65,6 +66,81 @@ var formatDisplayDate = function (value) {
     var parsed = new Date(value);
     return isNaN(parsed.getTime()) ? 'No date' : parsed.toISOString().split('T')[0];
 };
+// ──────────────────────────────────────────────
+// SLA helpers
+// ──────────────────────────────────────────────
+var AT_RISK_REMAINING_HOURS = 1; // change to adjust when "AtRisk" appears
+var getSlaStatusColor = function (status) {
+    switch (status) {
+        case 'OnTrack': return '#22c55e';
+        case 'AtRisk': return '#f59e0b';
+        case 'Breached': return '#ef4444';
+        case 'Resolved': return '#3b82f6';
+        default: return '#6b7280';
+    }
+};
+/**
+ * Returns the live SLA status based on the resolution deadline.
+ * Falls back to the stored slaStatus from SharePoint if dates are missing.
+ */
+var computeSlaStatus = function (resolutionDueDate, storedSlaStatus) {
+    // If we have a resolution due date, calculate live status
+    if (resolutionDueDate) {
+        var deadline = new Date(resolutionDueDate).getTime();
+        if (isNaN(deadline))
+            return storedSlaStatus;
+        var now = Date.now();
+        if (now > deadline)
+            return 'Breached';
+        var remainingMs = deadline - now;
+        if (remainingMs <= AT_RISK_REMAINING_HOURS * 60 * 60 * 1000)
+            return 'AtRisk';
+        return 'OnTrack';
+    }
+    // No due date – fall back to SP stored value
+    return storedSlaStatus;
+};
+/**
+ * Formats a time-in-milliseconds into a human-readable countdown string.
+ * e.g. "2h 15m", "45m", "10s"
+ */
+var formatCountdown = function (ms) {
+    if (ms <= 0)
+        return 'Overdue';
+    var totalSeconds = Math.floor(ms / 1000);
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+    if (hours > 0)
+        return "".concat(hours, "h ").concat(minutes, "m");
+    if (minutes > 0)
+        return "".concat(minutes, "m ").concat(seconds, "s");
+    return "".concat(seconds, "s");
+};
+/**
+ * Resolves the remaining time until the resolution deadline.
+ * Returns the countdown string, or null if no resolutionDueDate.
+ */
+var getRemainingTime = function (resolutionDueDate) {
+    if (!resolutionDueDate)
+        return null;
+    var deadline = new Date(resolutionDueDate).getTime();
+    if (isNaN(deadline))
+        return null;
+    var now = Date.now();
+    var diff = deadline - now;
+    return formatCountdown(diff);
+};
+var formatResolutionHours = function (minutes) {
+    if (minutes === undefined || minutes === null || minutes <= 0)
+        return null;
+    var hours = minutes / 60;
+    var display = hours % 1 === 0 ? hours.toString() : hours.toFixed(1);
+    return "".concat(display, "h");
+};
+// ──────────────────────────────────────────────
+// Grouping logic
+// ──────────────────────────────────────────────
 var groupTasksByStatus = function (tasks, statuses) {
     var grouped = statuses.reduce(function (acc, status) {
         acc[status] = [];
@@ -80,12 +156,21 @@ var groupTasksByStatus = function (tasks, statuses) {
     });
     return grouped;
 };
+// ──────────────────────────────────────────────
+// Component
+// ──────────────────────────────────────────────
 var BoardView = function (_a) {
     var tasks = _a.tasks, statuses = _a.statuses, type = _a.type, onTaskClick = _a.onTaskClick, onNewTask = _a.onNewTask;
     var tasksByStatus = groupTasksByStatus(tasks, statuses);
     var _b = (0, react_1.useState)(null), hoveredTaskId = _b[0], setHoveredTaskId = _b[1];
     var _c = (0, react_1.useState)(null), hoveredColumn = _c[0], setHoveredColumn = _c[1];
     var _d = (0, react_1.useState)({}), enteringTaskIds = _d[0], setEnteringTaskIds = _d[1];
+    // Tick state for re-rendering every second (drives countdown updates)
+    var _e = (0, react_1.useState)(0), setTick = _e[1];
+    (0, react_1.useEffect)(function () {
+        var interval = setInterval(function () { return setTick(function (t) { return t + 1; }); }, 1000);
+        return function () { return clearInterval(interval); };
+    }, []);
     (0, react_1.useEffect)(function () {
         if (Object.keys(enteringTaskIds).length === 0)
             return;
@@ -156,6 +241,10 @@ var BoardView = function (_a) {
                         var baseStyle = dragProvided.draggableProps.style;
                         var assigneeName = task.assignedTo || 'Unassigned';
                         var slaLabel = getSlaLabel(task.severity);
+                        var resolutionHours = formatResolutionHours(task.slaResolutionMinutes);
+                        // Live SLA status
+                        var liveStatus = computeSlaStatus(task.resolutionDueDate, task.slaStatus);
+                        var remainingTime = getRemainingTime(task.resolutionDueDate);
                         var dragStyle = dragSnapshot.isDragging
                             ? tslib_1.__assign(tslib_1.__assign({}, baseStyle), { transition: 'none', willChange: 'transform', userSelect: 'none', pointerEvents: 'none', backgroundColor: theme_1.THEME.colors.panel, borderRadius: '10px', padding: '14px', borderLeft: "4px solid ".concat(getStatusColor(status)), border: '1px solid #e2e8f0', color: theme_1.THEME.colors.textPrimary, display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'grabbing', opacity: 1, boxShadow: '0 10px 20px rgba(0,0,0,0.15),0 0 0 1px rgba(59,130,246,0.5)', transform: baseStyle.transform }) : tslib_1.__assign(tslib_1.__assign({}, baseStyle), { backgroundColor: theme_1.THEME.colors.panel, borderRadius: '10px', padding: '14px', borderLeft: "4px solid ".concat(type === 'incident' ? getSeverityColor(task.severity) : getStatusColor(status)), border: '1px solid #e2e8f0', color: theme_1.THEME.colors.textPrimary, display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'default', opacity: isEntering ? 0 : 1, userSelect: 'none', boxShadow: hoveredTaskId === task.id
                                 ? '0 10px 20px rgba(0,0,0,0.1),0 0 0 1px rgba(59,130,246,0.3)'
@@ -234,7 +323,37 @@ var BoardView = function (_a) {
                                         borderRadius: '8px',
                                         padding: '8px 10px',
                                         border: "1px solid ".concat(theme_1.THEME.colors.border),
-                                    } }, task.impact || 'Impact details pending'))) : (React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: {
+                                    } }, task.impact || 'Impact details pending'),
+                                (liveStatus || resolutionHours || remainingTime) && (React.createElement("div", { style: {
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                    } },
+                                    liveStatus && (React.createElement("span", { style: {
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            color: '#ffffff',
+                                            backgroundColor: getSlaStatusColor(liveStatus),
+                                            borderRadius: '999px',
+                                            padding: '1px 8px',
+                                        } }, liveStatus)),
+                                    React.createElement("div", { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+                                        remainingTime && (React.createElement("span", { style: {
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: theme_1.THEME.colors.textSecondary,
+                                            } },
+                                            "\u23F3 ",
+                                            remainingTime)),
+                                        resolutionHours && (React.createElement("span", { style: {
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: theme_1.THEME.colors.textSecondary,
+                                            } },
+                                            "\u23F1 ",
+                                            resolutionHours))))))) : (React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return setHoveredTaskId(task.id); }, onMouseLeave: function () { return setHoveredTaskId(null); }, style: {
                                     display: 'flex',
                                     justifyContent: 'space-between',
                                     alignItems: 'center',

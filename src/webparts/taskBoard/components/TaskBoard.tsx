@@ -1,3 +1,4 @@
+// TaskBoard.tsx
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { DragDropContext } from 'react-beautiful-dnd';
@@ -25,6 +26,7 @@ import { THEME } from './theme';
 import WorkItemModal from './WorkItemModal';
 import { getSP } from '../../../pnpjsConfig';
 import { TaskService } from '../../../services/TaskService';
+import { NotificationService } from '../../../services/NotificationService';
 import { getUserRole } from '../../../services/UserRoleService';
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
@@ -145,60 +147,31 @@ const reorderTasksAfterDrag = (
     ];
 };
 
-const resolveSharePointUserId = async (email: string, loginName: string): Promise<number | null> => {
+/**
+ * Helper: resolve a user's display name from a SharePoint user ID.
+ * This is a fallback when the initial query doesn't expand the AssignedTo person field.
+ */
+const resolveUserNameFromId = async (userId: number): Promise<string | null> => {
     const sp = getSP();
-
-    const normalizedEmail = (email || '').trim();
-    const normalizedLoginName = (loginName || '').trim();
-
-    const tryEnsure = async (value: string): Promise<number | null> => {
-        if (!value) return null;
+    try {
+        // Try getById first (for site users)
+        const user = await sp.web.siteUsers.getById(userId)();
+        return user?.Title || null;
+    } catch {
         try {
-            const ensured = await sp.web.ensureUser(value);
-            const ensuredAny = ensured as any;
-            return ensuredAny?.Id ?? ensuredAny?.data?.Id ?? null;
-        } catch {
-            return null;
-        }
-    };
-
-    if (normalizedEmail) {
-        try {
-            const user = await sp.web.siteUsers.getByEmail(normalizedEmail)();
-            if (user?.Id) return user.Id;
-        } catch {
-            // Fall through to login name handling.
-        }
-
-        const claimId = await tryEnsure(`i:0#.f|membership|${normalizedEmail}`);
-        if (claimId) return claimId;
-    }
-
-    if (normalizedLoginName) {
-        const ensuredLoginId = await tryEnsure(normalizedLoginName);
-        if (ensuredLoginId) return ensuredLoginId;
-
-        const lower = normalizedLoginName.toLowerCase();
-        if (lower.indexOf('@') > -1 && lower.indexOf('|') === -1) {
-            const claimId = await tryEnsure(`i:0#.f|membership|${normalizedLoginName}`);
-            if (claimId) return claimId;
-        }
-
-        const maybeEmail = lower.indexOf('|') > -1
-            ? normalizedLoginName.split('|').pop()?.trim() || ''
-            : '';
-
-        if (maybeEmail) {
-            try {
-                const user = await sp.web.siteUsers.getByEmail(maybeEmail)();
-                if (user?.Id) return user.Id;
-            } catch {
-                // No-op.
+            // Fallback: get the list item from UserInformationList (more reliable)
+            const userInfo = await sp.web.siteUserInfoList.items
+                .filter(`Id eq ${userId}`)
+                .select('Id,Title')
+                .top(1)();
+            if (userInfo && userInfo.length > 0) {
+                return userInfo[0].Title;
             }
+        } catch {
+            // ignore
         }
+        return null;
     }
-
-    return null;
 };
 
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
@@ -224,11 +197,36 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         (window as any).spfxContext = context;
     }, [context]);
 
-    const mapServiceItemToTask = React.useCallback((item: any, createdByFallback: string): Task => {
+    const mapServiceItemToTask = React.useCallback(async (item: any, createdByFallback: string): Promise<Task> => {
         const type = item.type || toWorkItemType(item.requestType);
         const priority = type === 'incident' && item.severity
             ? getPriorityFromSeverity(item.severity)
             : toTaskPriority(item.priority);
+
+        // Extract assignedTo name – may be missing due to REST fallback.
+        let assignedToName = '';
+        if (item.assignedTo) {
+            // If it's an object (full expand), extract Title.
+            if (typeof item.assignedTo === 'object') {
+                assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
+            } else {
+                assignedToName = String(item.assignedTo);
+            }
+        }
+
+        // If we still have no name but have an ID, try to resolve it.
+        if (!assignedToName) {
+            const userId = item.assignedToId;
+            if (userId && userId > 0) {
+                const resolvedName = await resolveUserNameFromId(userId);
+                if (resolvedName) assignedToName = resolvedName;
+            }
+        }
+
+        // If still empty and we have an email, fallback to email prefix.
+        if (!assignedToName && item.assignedToEmail) {
+            assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
+        }
 
         return {
             id: item.id.toString(),
@@ -237,8 +235,12 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             status: toWorkItemStatus(item.status, type),
             priority,
             site: toTaskSite(item.site),
-            assignedTo: item.assignedTo,
-            assignedToUser: item.assignedToUser,
+            assignedTo: assignedToName,
+            assignedToUser: assignedToName ? {
+                id: item.assignedToId ?? null,
+                name: assignedToName,
+                email: item.assignedToEmail ?? '',
+            } : undefined,
             assignedToId: item.assignedToId ?? undefined,
             assignedToEmail: item.assignedToEmail,
             assignedToLoginName: item.assignedToLoginName,
@@ -263,15 +265,37 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
     }, []);
 
-    useEffect(() => {
-        const loadTasks = async (): Promise<void> => {
-            if (!taskService) return;
+    // Load tasks and resolve missing user names
+    const loadAndMapTasks = async (): Promise<void> => {
+        if (!taskService) return;
 
+        try {
+            const sp = getSP();
+            const user = await sp.web.currentUser();
+
+            setCurrentUserName(user.Title || '');
+            setCurrentUserEmail(user.Email || '');
+            setCurrentUserSpId((user as any).Id ?? null);
+
+            const items = await taskService.getTasks();
+            // Map each item asynchronously (for user name resolution)
+            const mappedTasks = await Promise.all(
+                items.map((item: any) => mapServiceItemToTask(item, user.Title || ''))
+            );
+            setWorkItems(mappedTasks);
+        } catch (error) {
+            console.error('TaskBoard: load failed', error);
+        }
+    };
+
+    // Initial load
+    useEffect(() => {
+        const initialize = async () => {
             try {
                 setIsLoading(true);
+
                 const sp = getSP();
                 const user = await sp.web.currentUser();
-
                 setCurrentUserName(user.Title || '');
                 setCurrentUserEmail(user.Email || '');
                 setCurrentUserSpId((user as any).Id ?? null);
@@ -284,27 +308,43 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     setCanAssign(false);
                 }
 
-                console.log('LOAD: starting task loading process');
+                const notificationService = new NotificationService(context);
+                taskService.setNotificationService(notificationService);
 
-                await taskService.checkAndEscalateSLAs(); // Ensure SLA evaluation runs before fetching tasks
+                await taskService.checkAndEscalateSLAs();
+                await loadAndMapTasks(); // <-- now uses async mapping with user resolution
 
-                console.log('LOAD: SLA evaluation completed successfully');
-
-                const items = await taskService.getTasks();
-
-                console.log('LOAD: fetched tasks', items);
-
-                setWorkItems(items.map((item: any) => mapServiceItemToTask(item, user.Title || '')));
             } catch (error) {
-                console.error('TaskBoard: load failed', error);
+                console.error('TaskBoard: initial load failed', error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        loadTasks();
-    }, [mapServiceItemToTask, taskService]);
+        initialize();
+    }, [context]); // context is stable enough for initial load
 
+    // Periodic refresh
+    useEffect(() => {
+        if (isLoading || !currentUserName) return;
+
+        const interval = setInterval(async () => {
+            try {
+                await taskService.checkAndEscalateSLAs();
+                const items = await taskService.getTasks();
+                const mapped = await Promise.all(
+                    items.map((item: any) => mapServiceItemToTask(item, currentUserName))
+                );
+                setWorkItems(mapped);
+            } catch (error) {
+                console.error('Periodic refresh failed', error);
+            }
+        }, 60000);
+
+        return () => clearInterval(interval);
+    }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
+
+    // View switch animation
     useEffect(() => {
         if (activeView === displayedView) return;
         setIsViewVisible(false);
@@ -400,6 +440,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
             let finalAssigneeName = effectiveTask.assignedTo || '';
 
+            // If we need to resolve the user (no valid ID but email exists)
             if (
                 (!finalAssigneeId || finalAssigneeId <= 0) &&
                 (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName)
@@ -419,6 +460,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 finalAssigneeName = '';
             }
 
+            // ... rest of save logic unchanged (incident type handling, SLA, etc.)
             const incidentType = effectiveTask.type === 'incident'
                 ? effectiveTask.incidentType ?? null
                 : null;
@@ -490,9 +532,11 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     : undefined;
 
                 if (!returnedId) {
-                    console.warn('TaskBoard: createTask response did not include an ID; reloading list.', created);
                     const items = await taskService.getTasks();
-                    setWorkItems(items.map((item: any) => mapServiceItemToTask(item, currentUserName)));
+                    const mapped = await Promise.all(
+                        items.map((item: any) => mapServiceItemToTask(item, currentUserName))
+                    );
+                    setWorkItems(mapped);
                     return { ...effectiveTask, id: `recovered_${Date.now()}` };
                 }
 

@@ -306,6 +306,10 @@ var WorkItemModal = function (_a) {
                         if (isMounted) {
                             console.log('WorkItemModal: mapped IncidentTypes', data);
                             setIncidentTypes(data);
+                            // Auto-select the first incident type if none is already selected
+                            if (data.length > 0 && selectedIncidentTypeId == null) {
+                                setSelectedIncidentTypeId(data[0].Id);
+                            }
                         }
                         return [3 /*break*/, 5];
                     case 3:
@@ -393,7 +397,6 @@ var WorkItemModal = function (_a) {
             severity: matchingIncidentType.Severity,
         });
         setSeverity(matchingIncidentType.Severity);
-        setSeverity(matchingIncidentType.Severity);
         setDraft(function (previous) {
             if (!previous || previous.type !== 'incident')
                 return previous;
@@ -469,7 +472,7 @@ var WorkItemModal = function (_a) {
         });
     };
     var handleSave = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var itemToSave, saved, error_2, message;
+        var effectiveIncidentTypeId, itemToSave, saved, error_2, message;
         var _a;
         return tslib_1.__generator(this, function (_b) {
             switch (_b.label) {
@@ -479,7 +482,8 @@ var WorkItemModal = function (_a) {
                         (_a = titleRef.current) === null || _a === void 0 ? void 0 : _a.focus();
                         return [2 /*return*/];
                     }
-                    if (draft.type === 'incident' && !selectedIncidentTypeId) {
+                    effectiveIncidentTypeId = selectedIncidentTypeId !== null && selectedIncidentTypeId !== void 0 ? selectedIncidentTypeId : draft.incidentTypeId;
+                    if (draft.type === 'incident' && !effectiveIncidentTypeId) {
                         setIncidentTypeError('Incident Type is required');
                         return [2 /*return*/];
                     }
@@ -489,7 +493,7 @@ var WorkItemModal = function (_a) {
                 case 1:
                     _b.trys.push([1, 3, 4, 5]);
                     itemToSave = draft.type === 'incident'
-                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: selectedIncidentTypeId !== null && selectedIncidentTypeId !== void 0 ? selectedIncidentTypeId : undefined, incidentType: null, severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity), impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
+                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: effectiveIncidentTypeId !== null && effectiveIncidentTypeId !== void 0 ? effectiveIncidentTypeId : undefined, incidentType: null, severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity), impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
                     return [4 /*yield*/, onSave(itemToSave)];
                 case 2:
                     saved = _b.sent();
