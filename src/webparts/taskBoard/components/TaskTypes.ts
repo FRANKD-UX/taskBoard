@@ -10,11 +10,13 @@ export type TaskStatus =
 export type IncidentStatus =
     | 'New'
     | 'Investigating'
+    | 'Escalated'
     | 'Resolved';
 
 export type WorkItemStatus = TaskStatus | IncidentStatus;
 
 export type TaskPriority =
+    | 'Critical'
     | 'Low'
     | 'Medium'
     | 'High';
@@ -95,6 +97,11 @@ export interface Task {
     site: TaskSite;
 
     assignedTo?: string;
+    assignedToUser?: {
+        id: number | null;
+        name: string;
+        email: string;
+    };
     assignedToId?: number | null;
 
     /**
@@ -125,6 +132,8 @@ export interface Task {
     incidentType?: IIncidentType | null;
     slaResponseMinutes?: number;
     slaResolutionMinutes?: number;
+    responseDueDate?: string;
+    resolutionDueDate?: string;
     slaDeadline?: string;
     slaStatus?: IncidentSlaStatus;
 
@@ -143,6 +152,11 @@ export interface ITask {
     site: string;
 
     assignedTo?: string;
+    assignedToUser?: {
+        id: number | null;
+        name: string;
+        email: string;
+    };
     assignedToId?: number | null;
     assignedToEmail?: string;
     assignedToLoginName?: string;
@@ -162,6 +176,8 @@ export interface ITask {
     incidentType?: IIncidentType | null;
     slaResponseMinutes?: number;
     slaResolutionMinutes?: number;
+    responseDueDate?: string;
+    resolutionDueDate?: string;
     slaDeadline?: string;
     slaStatus?: IncidentSlaStatus;
 

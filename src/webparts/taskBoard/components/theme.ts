@@ -26,10 +26,12 @@ export const THEME = {
         Completed: '#22c55e',
         New: '#dc2626',
         Investigating: '#d97706',
+        Escalated: '#7c2d12',
         Resolved: '#16a34a',
     } as Record<WorkItemStatus, string>,
 
     priorityColors: {
+        Critical: '#b91c1c',
         Low: '#22c55e',
         Medium: '#f59e0b',
         High: '#ef4444',

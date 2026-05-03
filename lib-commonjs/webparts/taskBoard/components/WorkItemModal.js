@@ -5,6 +5,7 @@ var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
 var CollaborationPanel_1 = tslib_1.__importDefault(require("./CollaborationPanel"));
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
+var incidentSla_1 = require("./incidentSla");
 var theme_1 = require("./theme");
 var DepartmentService_1 = require("../../../services/DepartmentService");
 var SharePointService_1 = require("../services/SharePointService");
@@ -71,18 +72,6 @@ var getSeverityBadgeStyle = function (severity) {
             return { backgroundColor: '#dbeafe', color: '#1d4ed8', borderColor: '#93c5fd' };
         default:
             return { backgroundColor: '#f8fafc', color: theme_1.THEME.colors.textSecondary, borderColor: theme_1.THEME.colors.border };
-    }
-};
-var getPriorityFromSeverity = function (severity) {
-    switch (severity) {
-        case 'P1':
-            return 'High';
-        case 'P2':
-            return 'Medium';
-        case 'P3':
-        case 'P4':
-        default:
-            return 'Low';
     }
 };
 var overlayStyle = {
@@ -222,22 +211,24 @@ var severityTagBaseStyle = {
     fontWeight: 700,
 };
 var WorkItemModal = function (_a) {
-    var _b, _c, _d, _e, _f, _g, _h, _j;
+    var _b, _c, _d, _e, _f, _g, _h;
     var task = _a.task, canAssign = _a.canAssign, siteUrl = _a.siteUrl, context = _a.context, currentUserName = _a.currentUserName, currentUserSpId = _a.currentUserSpId, onSave = _a.onSave, onDelete = _a.onDelete, onClose = _a.onClose;
     var sharePointService = (0, react_1.useMemo)(function () {
         return context ? new SharePointService_1.SharePointService(context) : null;
     }, [context]);
-    var _k = (0, react_1.useState)(null), draft = _k[0], setDraft = _k[1];
-    var _l = (0, react_1.useState)(null), assignee = _l[0], setAssignee = _l[1];
-    var _m = (0, react_1.useState)(null), selectedIncidentType = _m[0], setSelectedIncidentType = _m[1];
-    var _o = (0, react_1.useState)([]), incidentTypes = _o[0], setIncidentTypes = _o[1];
-    var _p = (0, react_1.useState)(true), incidentTypesLoading = _p[0], setIncidentTypesLoading = _p[1];
-    var _q = (0, react_1.useState)(false), isSaving = _q[0], setIsSaving = _q[1];
-    var _r = (0, react_1.useState)(''), saveError = _r[0], setSaveError = _r[1];
-    var _s = (0, react_1.useState)(''), titleError = _s[0], setTitleError = _s[1];
-    var _t = (0, react_1.useState)(''), incidentTypeError = _t[0], setIncidentTypeError = _t[1];
-    var _u = (0, react_1.useState)([]), departments = _u[0], setDepartments = _u[1];
-    var _v = (0, react_1.useState)(true), departmentsLoading = _v[0], setDepartmentsLoading = _v[1];
+    var _j = (0, react_1.useState)(null), draft = _j[0], setDraft = _j[1];
+    var _k = (0, react_1.useState)(null), assignee = _k[0], setAssignee = _k[1];
+    var _l = (0, react_1.useState)(null), selectedIncidentType = _l[0], setSelectedIncidentType = _l[1];
+    var _m = (0, react_1.useState)([]), incidentTypes = _m[0], setIncidentTypes = _m[1];
+    var _o = (0, react_1.useState)(null), selectedIncidentTypeId = _o[0], setSelectedIncidentTypeId = _o[1];
+    var _p = (0, react_1.useState)(''), severity = _p[0], setSeverity = _p[1];
+    var _q = (0, react_1.useState)(true), incidentTypesLoading = _q[0], setIncidentTypesLoading = _q[1];
+    var _r = (0, react_1.useState)(false), isSaving = _r[0], setIsSaving = _r[1];
+    var _s = (0, react_1.useState)(''), saveError = _s[0], setSaveError = _s[1];
+    var _t = (0, react_1.useState)(''), titleError = _t[0], setTitleError = _t[1];
+    var _u = (0, react_1.useState)(''), incidentTypeError = _u[0], setIncidentTypeError = _u[1];
+    var _v = (0, react_1.useState)([]), departments = _v[0], setDepartments = _v[1];
+    var _w = (0, react_1.useState)(true), departmentsLoading = _w[0], setDepartmentsLoading = _w[1];
     (0, react_1.useEffect)(function () {
         console.log('WorkItemModal: SPFx context available', Boolean(context));
     }, [context]);
@@ -273,7 +264,7 @@ var WorkItemModal = function (_a) {
     (0, react_1.useEffect)(function () {
         var isMounted = true;
         var loadIncidentTypes = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var department, data, mappedIncidentTypes, error_1;
+            var department, data, error_1;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -313,15 +304,8 @@ var WorkItemModal = function (_a) {
                         data = _a.sent();
                         console.log('WorkItemModal: loaded IncidentTypes', data);
                         if (isMounted) {
-                            mappedIncidentTypes = data.map(function (item) { return ({
-                                id: item.Id,
-                                title: item.Title,
-                                severity: item.Severity,
-                                department: item.Department,
-                                isActive: item.IsActive,
-                            }); });
-                            console.log('WorkItemModal: mapped IncidentTypes', mappedIncidentTypes);
-                            setIncidentTypes(mappedIncidentTypes);
+                            console.log('WorkItemModal: mapped IncidentTypes', data);
+                            setIncidentTypes(data);
                         }
                         return [3 /*break*/, 5];
                     case 3:
@@ -355,6 +339,8 @@ var WorkItemModal = function (_a) {
             setDraft(function () { return null; });
             setAssignee(null);
             setSelectedIncidentType(null);
+            setSelectedIncidentTypeId(null);
+            setSeverity('');
             return;
         }
         if (lastTaskIdRef.current === task.id) {
@@ -374,38 +360,46 @@ var WorkItemModal = function (_a) {
         var today = getTodayIso();
         var normalizedType = task.type || (task.requestType === 'Incident' ? 'incident' : 'task');
         var normalizedStatus = task.status || (normalizedType === 'incident' ? 'New' : 'Unassigned');
-        var initialIncidentType = normalizedType === 'incident' ? (task.incidentType || null) : null;
-        var nextDraft = tslib_1.__assign(tslib_1.__assign({}, task), { type: normalizedType, requestType: toRequestType(normalizedType), status: normalizedStatus, site: task.site || 'Albertsdal', startDate: task.startDate || today, createdAt: task.createdAt || new Date().toISOString(), createdBy: task.createdBy || currentUserName, severity: normalizedType === 'incident' ? task.severity : undefined, impact: normalizedType === 'incident' ? (task.impact || '') : undefined, affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined, incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined, incidentType: initialIncidentType, department: normalizedType === 'incident' && (initialIncidentType === null || initialIncidentType === void 0 ? void 0 : initialIncidentType.department)
-                ? initialIncidentType.department
-                : task.department, slaResponseMinutes: task.slaResponseMinutes, slaResolutionMinutes: task.slaResolutionMinutes, slaDeadline: task.slaDeadline, slaStatus: task.slaStatus });
+        var initialIncidentTypeId = normalizedType === 'incident' && task.incidentTypeId
+            ? task.incidentTypeId
+            : null;
+        var initialSeverity = normalizedType === 'incident'
+            ? task.severity
+            : '';
+        var nextDraft = tslib_1.__assign(tslib_1.__assign({}, task), { type: normalizedType, requestType: toRequestType(normalizedType), status: normalizedStatus, site: task.site || 'Albertsdal', startDate: task.startDate || today, createdAt: task.createdAt || new Date().toISOString(), createdBy: task.createdBy || currentUserName, severity: normalizedType === 'incident' ? task.severity : undefined, impact: normalizedType === 'incident' ? (task.impact || '') : undefined, affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined, incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined, incidentType: null, department: task.department, slaResponseMinutes: task.slaResponseMinutes, slaResolutionMinutes: task.slaResolutionMinutes, slaDeadline: task.slaDeadline, slaStatus: task.slaStatus });
         console.log('WorkItemModal: initializing draft for task', task.id);
         setDraft(function () { return nextDraft; });
-        setSelectedIncidentType(initialIncidentType);
+        setSelectedIncidentType(null);
+        setSelectedIncidentTypeId(initialIncidentTypeId);
+        setSeverity(initialSeverity);
         setAssignee(buildResolvedUser(task));
         setSaveError('');
         setTitleError('');
         setIncidentTypeError('');
     }, [task, currentUserName]);
     (0, react_1.useEffect)(function () {
-        var _a;
-        if (!draft || draft.type !== 'incident' || incidentTypes.length === 0)
+        if (!draft || draft.type !== 'incident' || incidentTypes.length === 0 || !selectedIncidentTypeId)
             return;
-        var matchingIncidentType = draft.incidentTypeId
-            ? incidentTypes.find(function (item) { return item.id === draft.incidentTypeId; }) || null
-            : ((_a = draft.incidentType) === null || _a === void 0 ? void 0 : _a.id)
-                ? incidentTypes.find(function (item) { var _a; return item.id === ((_a = draft.incidentType) === null || _a === void 0 ? void 0 : _a.id); }) || draft.incidentType || null
-                : null;
+        var matchingIncidentType = incidentTypes.find(function (item) { return item.Id === selectedIncidentTypeId; }) || null;
         if (!matchingIncidentType)
             return;
-        if ((selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.id) === matchingIncidentType.id && draft.severity === matchingIncidentType.severity)
+        if ((selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.id) === matchingIncidentType.Id && severity === matchingIncidentType.Severity)
             return;
-        setSelectedIncidentType(matchingIncidentType);
+        console.log('WorkItemModal: selected IncidentType', matchingIncidentType);
+        console.log('WorkItemModal: resolved severity', matchingIncidentType.Severity);
+        setSelectedIncidentType({
+            id: matchingIncidentType.Id,
+            title: matchingIncidentType.Title,
+            severity: matchingIncidentType.Severity,
+        });
+        setSeverity(matchingIncidentType.Severity);
+        setSeverity(matchingIncidentType.Severity);
         setDraft(function (previous) {
             if (!previous || previous.type !== 'incident')
                 return previous;
-            return tslib_1.__assign(tslib_1.__assign({}, previous), { incidentTypeId: matchingIncidentType.id, incidentType: matchingIncidentType, severity: matchingIncidentType.severity, priority: getPriorityFromSeverity(matchingIncidentType.severity), department: matchingIncidentType.department || previous.department });
+            return tslib_1.__assign(tslib_1.__assign({}, previous), { incidentTypeId: matchingIncidentType.Id, incidentType: null, severity: matchingIncidentType.Severity, priority: (0, incidentSla_1.getPriorityFromSeverity)(matchingIncidentType.Severity) });
         });
-    }, [draft, incidentTypes, selectedIncidentType]);
+    }, [draft === null || draft === void 0 ? void 0 : draft.type, incidentTypes, selectedIncidentType, selectedIncidentTypeId, severity]);
     (0, react_1.useEffect)(function () {
         if (!draft || !isNewItem)
             return;
@@ -432,6 +426,13 @@ var WorkItemModal = function (_a) {
             if (!previous)
                 return previous;
             var nextType = patch.type || previous.type;
+            if (patch.department !== undefined && patch.department !== previous.department) {
+                console.log('WorkItemModal: department changed, clearing incident type/severity');
+                setSelectedIncidentType(null);
+                setSelectedIncidentTypeId(null);
+                setSeverity('');
+                return tslib_1.__assign(tslib_1.__assign(tslib_1.__assign({}, previous), patch), { requestType: toRequestType(nextType), incidentTypeId: undefined, incidentType: null, severity: undefined });
+            }
             return tslib_1.__assign(tslib_1.__assign(tslib_1.__assign({}, previous), patch), { requestType: toRequestType(nextType) });
         });
         if ('title' in patch)
@@ -449,15 +450,22 @@ var WorkItemModal = function (_a) {
     };
     var handleIncidentTypeChange = function (event) {
         var nextId = Number(event.target.value);
-        var nextIncidentType = incidentTypes.find(function (item) { return item.id === nextId; }) || null;
-        setSelectedIncidentType(nextIncidentType);
+        setSelectedIncidentTypeId(nextId || null);
         setIncidentTypeError('');
+        var nextIncidentType = incidentTypes.find(function (item) { return item.Id === nextId; });
+        if (nextIncidentType) {
+            console.log('WorkItemModal: selected IncidentType', nextIncidentType);
+            console.log('WorkItemModal: resolved severity', nextIncidentType.Severity);
+            setSeverity(nextIncidentType.Severity);
+        }
+        else {
+            setSeverity('');
+        }
         update({
-            incidentTypeId: nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.id,
-            incidentType: nextIncidentType,
-            severity: nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.severity,
-            priority: getPriorityFromSeverity(nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.severity),
-            department: (nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.department) || draft.department,
+            incidentTypeId: nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.Id,
+            incidentType: null,
+            severity: nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.Severity,
+            priority: (0, incidentSla_1.getPriorityFromSeverity)(nextIncidentType === null || nextIncidentType === void 0 ? void 0 : nextIncidentType.Severity),
         });
     };
     var handleSave = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
@@ -471,7 +479,7 @@ var WorkItemModal = function (_a) {
                         (_a = titleRef.current) === null || _a === void 0 ? void 0 : _a.focus();
                         return [2 /*return*/];
                     }
-                    if (draft.type === 'incident' && !selectedIncidentType) {
+                    if (draft.type === 'incident' && !selectedIncidentTypeId) {
                         setIncidentTypeError('Incident Type is required');
                         return [2 /*return*/];
                     }
@@ -481,7 +489,7 @@ var WorkItemModal = function (_a) {
                 case 1:
                     _b.trys.push([1, 3, 4, 5]);
                     itemToSave = draft.type === 'incident'
-                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.id, incidentType: selectedIncidentType, severity: selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity, impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
+                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: selectedIncidentTypeId !== null && selectedIncidentTypeId !== void 0 ? selectedIncidentTypeId : undefined, incidentType: null, severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity), impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
                     return [4 /*yield*/, onSave(itemToSave)];
                 case 2:
                     saved = _b.sent();
@@ -511,10 +519,10 @@ var WorkItemModal = function (_a) {
     };
     var taskSpId = toTaskSpId(draft.id);
     var statusOptions = getStatusOptions(draft.type);
-    var derivedSeverity = (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity;
+    var derivedSeverity = severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity;
     var severityBadgeStyle = getSeverityBadgeStyle(derivedSeverity);
     var derivedPriority = draft.type === 'incident'
-        ? getPriorityFromSeverity(derivedSeverity)
+        ? (derivedSeverity ? (0, incidentSla_1.getPriorityFromSeverity)(derivedSeverity) : draft.priority)
         : draft.priority;
     return (React.createElement("div", { style: overlayStyle, onClick: onClose },
         React.createElement("div", { style: modalStyle, onClick: function (event) { return event.stopPropagation(); } },
@@ -556,13 +564,13 @@ var WorkItemModal = function (_a) {
                             React.createElement("label", { style: labelStyle, htmlFor: "wim-incident-type" },
                                 "Incident Type ",
                                 React.createElement("span", { style: { color: '#ef4444' } }, "*")),
-                            React.createElement("select", { id: "wim-incident-type", value: (_c = selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.id) !== null && _c !== void 0 ? _c : '', onChange: handleIncidentTypeChange, disabled: incidentTypesLoading, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { borderColor: incidentTypeError ? '#ef4444' : theme_1.THEME.colors.border, opacity: incidentTypesLoading ? 0.7 : 1 }) },
+                            React.createElement("select", { id: "wim-incident-type", value: selectedIncidentTypeId !== null && selectedIncidentTypeId !== void 0 ? selectedIncidentTypeId : '', onChange: handleIncidentTypeChange, disabled: incidentTypesLoading, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { borderColor: incidentTypeError ? '#ef4444' : theme_1.THEME.colors.border, opacity: incidentTypesLoading ? 0.7 : 1 }) },
                                 incidentTypesLoading && (React.createElement("option", { value: "" }, "Loading incident types...")),
-                                incidentTypes.map(function (incidentType) { return (React.createElement("option", { key: incidentType.id, value: incidentType.id }, incidentType.title)); })),
+                                incidentTypes.map(function (incidentType) { return (React.createElement("option", { key: incidentType.Id, value: incidentType.Id }, incidentType.Title)); })),
                             incidentTypeError && (React.createElement("span", { style: { display: 'block', marginTop: '4px', fontSize: '12px', color: '#ef4444' } }, incidentTypeError))),
                         React.createElement("div", null,
                             React.createElement("label", { style: labelStyle }, "Severity"),
-                            React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, severityTagBaseStyle), severityBadgeStyle) }, derivedSeverity || 'Select incident type'))),
+                            React.createElement("input", { type: "text", value: derivedSeverity || '', readOnly: true, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.7, cursor: 'not-allowed' }) }))),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "wim-affected-service" }, "Affected Service"),
                         React.createElement("input", { id: "wim-affected-service", type: "text", value: draft.affectedService || '', onChange: function (event) { return update({ affectedService: event.target.value }); }, placeholder: "Email, network, ERP, payroll...", style: inputStyle })),
@@ -580,16 +588,16 @@ var WorkItemModal = function (_a) {
                                     textTransform: 'none',
                                     fontWeight: 400,
                                 } }, "(auto)"))),
-                        React.createElement("input", { id: "wim-start-date", type: "date", value: (_e = (_d = draft.startDate) === null || _d === void 0 ? void 0 : _d.split('T')[0]) !== null && _e !== void 0 ? _e : '', onChange: function (event) { return update({ startDate: event.target.value }); }, style: isNewItem ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewItem })),
+                        React.createElement("input", { id: "wim-start-date", type: "date", value: (_d = (_c = draft.startDate) === null || _c === void 0 ? void 0 : _c.split('T')[0]) !== null && _d !== void 0 ? _d : '', onChange: function (event) { return update({ startDate: event.target.value }); }, style: isNewItem ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewItem })),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "wim-due-date" }, "Due Date"),
-                        React.createElement("input", { id: "wim-due-date", type: "date", value: (_g = (_f = draft.dueDate) === null || _f === void 0 ? void 0 : _f.split('T')[0]) !== null && _g !== void 0 ? _g : '', min: (_h = draft.startDate) === null || _h === void 0 ? void 0 : _h.split('T')[0], onChange: function (event) { return update({ dueDate: event.target.value }); }, style: inputStyle }))),
+                        React.createElement("input", { id: "wim-due-date", type: "date", value: (_f = (_e = draft.dueDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', min: (_g = draft.startDate) === null || _g === void 0 ? void 0 : _g.split('T')[0], onChange: function (event) { return update({ dueDate: event.target.value }); }, style: inputStyle }))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "wim-department" }, "Department"),
                     React.createElement("select", { id: "wim-department", value: draft.department, onChange: function (event) { return update({ department: event.target.value }); }, style: inputStyle }, departmentsLoading ? (React.createElement("option", null, "Loading...")) : departments.length === 0 ? (React.createElement("option", null, "No departments")) : (departments.map(function (department) { return (React.createElement("option", { key: department, value: department }, department)); })))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "wim-description" }, "Description"),
-                    React.createElement("textarea", { id: "wim-description", value: (_j = draft.description) !== null && _j !== void 0 ? _j : '', onChange: function (event) { return update({ description: event.target.value }); }, placeholder: draft.type === 'incident' ? 'Add incident notes...' : 'Add a description...', rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),
+                    React.createElement("textarea", { id: "wim-description", value: (_h = draft.description) !== null && _h !== void 0 ? _h : '', onChange: function (event) { return update({ description: event.target.value }); }, placeholder: draft.type === 'incident' ? 'Add incident notes...' : 'Add a description...', rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),
                 !isNewItem && (React.createElement(CollaborationPanel_1.default, { taskSpId: taskSpId, taskTitle: draft.title, currentUserSpId: currentUserSpId, siteUrl: siteUrl }))),
             saveError && (React.createElement("div", { style: {
                     padding: '10px 24px',

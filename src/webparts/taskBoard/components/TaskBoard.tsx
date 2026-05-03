@@ -20,7 +20,7 @@ import type {
     WorkItemStatus,
     WorkItemType,
 } from './TaskTypes';
-import { buildIncidentSla } from './incidentSla';
+import { buildIncidentSla, getPriorityFromSeverity } from './incidentSla';
 import { THEME } from './theme';
 import WorkItemModal from './WorkItemModal';
 import { getSP } from '../../../pnpjsConfig';
@@ -32,7 +32,7 @@ type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 const TEMP_ID_PREFIX = 'temp_';
 
 const TASK_STATUSES: TaskStatus[] = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
-const INCIDENT_STATUSES: IncidentStatus[] = ['New', 'Investigating', 'Resolved'];
+const INCIDENT_STATUSES: IncidentStatus[] = ['New', 'Investigating', 'Escalated', 'Resolved'];
 
 const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
     { key: 'board', label: 'Board' },
@@ -51,7 +51,7 @@ const toWorkItemType = (requestType?: string): WorkItemType => {
 };
 
 const toTaskPriority = (value?: string): TaskPriority => {
-    if (value === 'Low' || value === 'High') return value;
+    if (value === 'Critical' || value === 'Low' || value === 'High') return value;
     return 'Medium';
 };
 
@@ -226,15 +226,19 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const mapServiceItemToTask = React.useCallback((item: any, createdByFallback: string): Task => {
         const type = item.type || toWorkItemType(item.requestType);
+        const priority = type === 'incident' && item.severity
+            ? getPriorityFromSeverity(item.severity)
+            : toTaskPriority(item.priority);
 
         return {
             id: item.id.toString(),
             type,
             title: item.title,
             status: toWorkItemStatus(item.status, type),
-            priority: toTaskPriority(item.priority),
+            priority,
             site: toTaskSite(item.site),
             assignedTo: item.assignedTo,
+            assignedToUser: item.assignedToUser,
             assignedToId: item.assignedToId ?? undefined,
             assignedToEmail: item.assignedToEmail,
             assignedToLoginName: item.assignedToLoginName,
@@ -252,18 +256,17 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             incidentType: item.incidentType,
             slaResponseMinutes: item.slaResponseMinutes,
             slaResolutionMinutes: item.slaResolutionMinutes,
+            responseDueDate: item.responseDueDate,
+            resolutionDueDate: item.resolutionDueDate,
             slaDeadline: item.slaDeadline,
             slaStatus: item.slaStatus,
         };
     }, []);
 
-    const refreshWorkItems = React.useCallback(async (createdByFallback: string): Promise<void> => {
-        const data = await taskService.getTasks();
-        setWorkItems(data.map((item: any) => mapServiceItemToTask(item, createdByFallback)));
-    }, [mapServiceItemToTask, taskService]);
-
     useEffect(() => {
         const loadTasks = async (): Promise<void> => {
+            if (!taskService) return;
+
             try {
                 setIsLoading(true);
                 const sp = getSP();
@@ -281,7 +284,17 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     setCanAssign(false);
                 }
 
-                await refreshWorkItems(user.Title || '');
+                console.log('LOAD: starting task loading process');
+
+                await taskService.checkAndEscalateSLAs(); // Ensure SLA evaluation runs before fetching tasks
+
+                console.log('LOAD: SLA evaluation completed successfully');
+
+                const items = await taskService.getTasks();
+
+                console.log('LOAD: fetched tasks', items);
+
+                setWorkItems(items.map((item: any) => mapServiceItemToTask(item, user.Title || '')));
             } catch (error) {
                 console.error('TaskBoard: load failed', error);
             } finally {
@@ -290,7 +303,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
 
         loadTasks();
-    }, [refreshWorkItems]);
+    }, [mapServiceItemToTask, taskService]);
 
     useEffect(() => {
         if (activeView === displayedView) return;
@@ -357,6 +370,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             incidentType: null,
             slaResponseMinutes: undefined,
             slaResolutionMinutes: undefined,
+            responseDueDate: undefined,
+            resolutionDueDate: undefined,
             slaDeadline: undefined,
             slaStatus: undefined,
         };
@@ -370,6 +385,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const handleSaveTask = async (task: Task): Promise<Task | null> => {
         try {
             const isNew = task.id.startsWith(TEMP_ID_PREFIX);
+            const existingTask = isNew ? null : workItems.find((item) => item.id === task.id) ?? null;
 
             const effectiveTask: Task = !canAssign
                 ? {
@@ -403,7 +419,23 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 finalAssigneeName = '';
             }
 
-            if (effectiveTask.type === 'incident' && (!effectiveTask.incidentTypeId || !effectiveTask.severity)) {
+            const incidentType = effectiveTask.type === 'incident'
+                ? effectiveTask.incidentType ?? null
+                : null;
+            const incidentTypeId = effectiveTask.type === 'incident'
+                ? incidentType?.id ?? effectiveTask.incidentTypeId ?? null
+                : null;
+            const derivedSeverity = effectiveTask.type === 'incident'
+                ? incidentType?.severity ?? effectiveTask.severity
+                : undefined;
+            const derivedPriority = effectiveTask.type === 'incident'
+                ? getPriorityFromSeverity(derivedSeverity)
+                : effectiveTask.priority;
+            const derivedDepartment = effectiveTask.type === 'incident'
+                ? incidentType?.department || effectiveTask.department || 'IT'
+                : effectiveTask.department || 'IT';
+
+            if (effectiveTask.type === 'incident' && (!incidentTypeId || !derivedSeverity)) {
                 throw new Error('Incident Type is required before an incident can be created.');
             }
 
@@ -414,30 +446,41 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
             };
 
-            const incidentSla = isNew && effectiveTask.type === 'incident' && effectiveTask.severity
-                ? buildIncidentSla(effectiveTask.severity)
+            const shouldRebuildIncidentSla = effectiveTask.type === 'incident'
+                && Boolean(derivedSeverity)
+                && (
+                    isNew
+                    || existingTask?.incidentTypeId !== incidentTypeId
+                    || !existingTask?.responseDueDate
+                    || !existingTask?.resolutionDueDate
+                );
+
+            const incidentSla = shouldRebuildIncidentSla && derivedSeverity
+                ? buildIncidentSla(derivedSeverity)
                 : null;
 
             const payload = {
                 title: effectiveTask.title,
                 status: effectiveTask.status,
-                priority: effectiveTask.priority,
+                priority: derivedPriority,
                 site: effectiveTask.site || 'Albertsdal',
                 assignedToId: finalAssigneeId,
                 startDate: normaliseDate(effectiveTask.startDate) || getTodayIso(),
                 dueDate: normaliseDate(effectiveTask.dueDate),
                 description: effectiveTask.description || '',
                 requestType: toRequestType(effectiveTask.type),
-                department: effectiveTask.department || 'IT',
-                severity: effectiveTask.type === 'incident' ? effectiveTask.severity : undefined,
+                department: derivedDepartment,
+                severity: effectiveTask.type === 'incident' ? derivedSeverity : undefined,
                 impact: effectiveTask.type === 'incident' ? effectiveTask.impact || '' : undefined,
                 affectedService: effectiveTask.type === 'incident' ? effectiveTask.affectedService || '' : undefined,
-                incidentTypeId: effectiveTask.type === 'incident' ? effectiveTask.incidentTypeId ?? null : null,
-                incidentType: effectiveTask.type === 'incident' ? effectiveTask.incidentType ?? null : null,
-                slaResponseMinutes: incidentSla?.responseMinutes,
-                slaResolutionMinutes: incidentSla?.resolutionMinutes,
-                slaDeadline: incidentSla?.deadline,
-                slaStatus: incidentSla?.status,
+                incidentTypeId: effectiveTask.type === 'incident' ? incidentTypeId : null,
+                incidentType: effectiveTask.type === 'incident' ? incidentType : null,
+                slaResponseMinutes: incidentSla?.responseMinutes ?? effectiveTask.slaResponseMinutes,
+                slaResolutionMinutes: incidentSla?.resolutionMinutes ?? effectiveTask.slaResolutionMinutes,
+                responseDueDate: incidentSla?.responseDueDate ?? effectiveTask.responseDueDate,
+                resolutionDueDate: incidentSla?.resolutionDueDate ?? effectiveTask.resolutionDueDate,
+                slaDeadline: incidentSla?.deadline ?? effectiveTask.slaDeadline,
+                slaStatus: incidentSla?.status ?? effectiveTask.slaStatus,
             };
 
             if (isNew) {
@@ -448,25 +491,31 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
                 if (!returnedId) {
                     console.warn('TaskBoard: createTask response did not include an ID; reloading list.', created);
-                    await refreshWorkItems(currentUserName);
+                    const items = await taskService.getTasks();
+                    setWorkItems(items.map((item: any) => mapServiceItemToTask(item, currentUserName)));
                     return { ...effectiveTask, id: `recovered_${Date.now()}` };
                 }
 
                 const persisted: Task = {
                     ...effectiveTask,
                     id: returnedId,
+                    priority: derivedPriority,
                     assignedTo: finalAssigneeName,
                     assignedToId: finalAssigneeId ?? undefined,
                     startDate: payload.startDate,
                     dueDate: payload.dueDate,
                     requestType: toRequestType(effectiveTask.type),
                     createdBy: currentUserName,
-                    incidentTypeId: effectiveTask.incidentTypeId,
-                    incidentType: effectiveTask.incidentType,
-                    slaResponseMinutes: incidentSla?.responseMinutes,
-                    slaResolutionMinutes: incidentSla?.resolutionMinutes,
-                    slaDeadline: incidentSla?.deadline,
-                    slaStatus: incidentSla?.status,
+                    department: derivedDepartment,
+                    severity: derivedSeverity,
+                    incidentTypeId,
+                    incidentType,
+                    slaResponseMinutes: payload.slaResponseMinutes,
+                    slaResolutionMinutes: payload.slaResolutionMinutes,
+                    responseDueDate: payload.responseDueDate,
+                    resolutionDueDate: payload.resolutionDueDate,
+                    slaDeadline: payload.slaDeadline,
+                    slaStatus: payload.slaStatus,
                 };
 
                 setWorkItems((prev) => [...prev, persisted]);
@@ -477,13 +526,22 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
             const updated: Task = {
                 ...effectiveTask,
+                priority: derivedPriority,
                 assignedTo: finalAssigneeName,
                 assignedToId: finalAssigneeId ?? undefined,
                 startDate: payload.startDate,
                 dueDate: payload.dueDate,
                 requestType: toRequestType(effectiveTask.type),
-                incidentTypeId: effectiveTask.incidentTypeId,
-                incidentType: effectiveTask.incidentType,
+                department: derivedDepartment,
+                severity: derivedSeverity,
+                incidentTypeId,
+                incidentType,
+                slaResponseMinutes: payload.slaResponseMinutes,
+                slaResolutionMinutes: payload.slaResolutionMinutes,
+                responseDueDate: payload.responseDueDate,
+                resolutionDueDate: payload.resolutionDueDate,
+                slaDeadline: payload.slaDeadline,
+                slaStatus: payload.slaStatus,
             };
 
             setWorkItems((prev) => prev.map((item) => (item.id === effectiveTask.id ? updated : item)));

@@ -16,6 +16,7 @@ import type {
     TaskStatus,
     WorkItemType,
 } from './TaskTypes';
+import { getPriorityFromSeverity } from './incidentSla';
 import { THEME } from './theme';
 import { DepartmentService } from '../../../services/DepartmentService';
 import { SharePointService, type IncidentTypeItem } from '../services/SharePointService';
@@ -102,19 +103,6 @@ const getSeverityBadgeStyle = (severity?: IncidentSeverity): React.CSSProperties
             return { backgroundColor: '#dbeafe', color: '#1d4ed8', borderColor: '#93c5fd' };
         default:
             return { backgroundColor: '#f8fafc', color: THEME.colors.textSecondary, borderColor: THEME.colors.border };
-    }
-};
-
-const getPriorityFromSeverity = (severity?: IncidentSeverity): TaskPriority => {
-    switch (severity) {
-        case 'P1':
-            return 'High';
-        case 'P2':
-            return 'Medium';
-        case 'P3':
-        case 'P4':
-        default:
-            return 'Low';
     }
 };
 
@@ -286,7 +274,9 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
     const [draft, setDraft] = useState<Task | null>(null);
     const [assignee, setAssignee] = useState<IResolvedUser | null>(null);
     const [selectedIncidentType, setSelectedIncidentType] = useState<IIncidentType | null>(null);
-    const [incidentTypes, setIncidentTypes] = useState<IIncidentType[]>([]);
+    const [incidentTypes, setIncidentTypes] = useState<Array<Pick<IncidentTypeItem, 'Id' | 'Title' | 'Severity'>>>([]);
+    const [selectedIncidentTypeId, setSelectedIncidentTypeId] = useState<number | null>(null);
+    const [severity, setSeverity] = useState<IncidentSeverity | ''>('');
     const [incidentTypesLoading, setIncidentTypesLoading] = useState<boolean>(true);
     const [isSaving, setIsSaving] = useState<boolean>(false);
     const [saveError, setSaveError] = useState<string>('');
@@ -367,16 +357,8 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                 console.log('WorkItemModal: loaded IncidentTypes', data);
 
                 if (isMounted) {
-                    const mappedIncidentTypes: IIncidentType[] = data.map((item: IncidentTypeItem) => ({
-                        id: item.Id,
-                        title: item.Title,
-                        severity: item.Severity as IncidentSeverity,
-                        department: item.Department,
-                        isActive: item.IsActive,
-                    }));
-
-                    console.log('WorkItemModal: mapped IncidentTypes', mappedIncidentTypes);
-                    setIncidentTypes(mappedIncidentTypes);
+                    console.log('WorkItemModal: mapped IncidentTypes', data);
+                    setIncidentTypes(data);
                 }
             } catch (error) {
                 console.error('WorkItemModal: failed to load IncidentTypes', error);
@@ -407,6 +389,8 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             setDraft(() => null);
             setAssignee(null);
             setSelectedIncidentType(null);
+            setSelectedIncidentTypeId(null);
+            setSeverity('');
             return;
         }
 
@@ -431,7 +415,12 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
         const today = getTodayIso();
         const normalizedType = task.type || (task.requestType === 'Incident' ? 'incident' : 'task');
         const normalizedStatus = task.status || (normalizedType === 'incident' ? 'New' : 'Unassigned');
-        const initialIncidentType = normalizedType === 'incident' ? (task.incidentType || null) : null;
+        const initialIncidentTypeId = normalizedType === 'incident' && task.incidentTypeId
+            ? task.incidentTypeId
+            : null;
+        const initialSeverity = normalizedType === 'incident'
+            ? (task.severity as IncidentSeverity | '')
+            : '';
         const nextDraft: Task = {
             ...task,
             type: normalizedType,
@@ -441,14 +430,12 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             startDate: task.startDate || today,
             createdAt: task.createdAt || new Date().toISOString(),
             createdBy: task.createdBy || currentUserName,
-            severity: normalizedType === 'incident' ? task.severity : undefined,
+            severity: normalizedType === 'incident' ? (task.severity as IncidentSeverity | undefined) : undefined,
             impact: normalizedType === 'incident' ? (task.impact || '') : undefined,
             affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined,
             incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined,
-            incidentType: initialIncidentType,
-            department: normalizedType === 'incident' && initialIncidentType?.department
-                ? initialIncidentType.department
-                : task.department,
+            incidentType: null,
+            department: task.department,
             slaResponseMinutes: task.slaResponseMinutes,
             slaResolutionMinutes: task.slaResolutionMinutes,
             slaDeadline: task.slaDeadline,
@@ -457,7 +444,9 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
 
         console.log('WorkItemModal: initializing draft for task', task.id);
         setDraft(() => nextDraft);
-        setSelectedIncidentType(initialIncidentType);
+        setSelectedIncidentType(null);
+        setSelectedIncidentTypeId(initialIncidentTypeId);
+        setSeverity(initialSeverity);
         setAssignee(buildResolvedUser(task));
         setSaveError('');
         setTitleError('');
@@ -465,30 +454,33 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
     }, [task, currentUserName]);
 
     useEffect(() => {
-        if (!draft || draft.type !== 'incident' || incidentTypes.length === 0) return;
+        if (!draft || draft.type !== 'incident' || incidentTypes.length === 0 || !selectedIncidentTypeId) return;
 
-        const matchingIncidentType = draft.incidentTypeId
-            ? incidentTypes.find((item) => item.id === draft.incidentTypeId) || null
-            : draft.incidentType?.id
-            ? incidentTypes.find((item) => item.id === draft.incidentType?.id) || draft.incidentType || null
-            : null;
+        const matchingIncidentType = incidentTypes.find((item) => item.Id === selectedIncidentTypeId) || null;
 
         if (!matchingIncidentType) return;
-        if (selectedIncidentType?.id === matchingIncidentType.id && draft.severity === matchingIncidentType.severity) return;
+        if (selectedIncidentType?.id === matchingIncidentType.Id && severity === matchingIncidentType.Severity) return;
 
-        setSelectedIncidentType(matchingIncidentType);
+        console.log('WorkItemModal: selected IncidentType', matchingIncidentType);
+        console.log('WorkItemModal: resolved severity', matchingIncidentType.Severity);
+        setSelectedIncidentType({
+            id: matchingIncidentType.Id,
+            title: matchingIncidentType.Title,
+            severity: matchingIncidentType.Severity as IncidentSeverity,
+        });
+        setSeverity(matchingIncidentType.Severity as IncidentSeverity);
+        setSeverity(matchingIncidentType.Severity as IncidentSeverity);
         setDraft((previous) => {
             if (!previous || previous.type !== 'incident') return previous;
             return {
                 ...previous,
-                incidentTypeId: matchingIncidentType.id,
-                incidentType: matchingIncidentType,
-                severity: matchingIncidentType.severity,
-                priority: getPriorityFromSeverity(matchingIncidentType.severity),
-                department: matchingIncidentType.department || previous.department,
+                incidentTypeId: matchingIncidentType.Id,
+                incidentType: null,
+                severity: matchingIncidentType.Severity as IncidentSeverity,
+                priority: getPriorityFromSeverity(matchingIncidentType.Severity as IncidentSeverity),
             };
         });
-    }, [draft, incidentTypes, selectedIncidentType]);
+    }, [draft?.type, incidentTypes, selectedIncidentType, selectedIncidentTypeId, severity]);
 
     useEffect(() => {
         if (!draft || !isNewItem) return;
@@ -514,6 +506,20 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
         setDraft((previous) => {
             if (!previous) return previous;
             const nextType = patch.type || previous.type;
+            if (patch.department !== undefined && patch.department !== previous.department) {
+                console.log('WorkItemModal: department changed, clearing incident type/severity');
+                setSelectedIncidentType(null);
+                setSelectedIncidentTypeId(null);
+                setSeverity('');
+                return {
+                    ...previous,
+                    ...patch,
+                    requestType: toRequestType(nextType as WorkItemType),
+                    incidentTypeId: undefined,
+                    incidentType: null,
+                    severity: undefined,
+                };
+            }
             return {
                 ...previous,
                 ...patch,
@@ -536,16 +542,21 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
 
     const handleIncidentTypeChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
         const nextId = Number(event.target.value);
-        const nextIncidentType = incidentTypes.find((item) => item.id === nextId) || null;
-
-        setSelectedIncidentType(nextIncidentType);
+        setSelectedIncidentTypeId(nextId || null);
         setIncidentTypeError('');
+        const nextIncidentType = incidentTypes.find((item) => item.Id === nextId);
+        if (nextIncidentType) {
+            console.log('WorkItemModal: selected IncidentType', nextIncidentType);
+            console.log('WorkItemModal: resolved severity', nextIncidentType.Severity);
+            setSeverity(nextIncidentType.Severity as IncidentSeverity);
+        } else {
+            setSeverity('');
+        }
         update({
-            incidentTypeId: nextIncidentType?.id,
-            incidentType: nextIncidentType,
-            severity: nextIncidentType?.severity,
-            priority: getPriorityFromSeverity(nextIncidentType?.severity),
-            department: nextIncidentType?.department || draft.department,
+            incidentTypeId: nextIncidentType?.Id,
+            incidentType: null,
+            severity: nextIncidentType?.Severity as IncidentSeverity | undefined,
+            priority: getPriorityFromSeverity(nextIncidentType?.Severity as IncidentSeverity | undefined),
         });
     };
 
@@ -556,7 +567,7 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             return;
         }
 
-        if (draft.type === 'incident' && !selectedIncidentType) {
+        if (draft.type === 'incident' && !selectedIncidentTypeId) {
             setIncidentTypeError('Incident Type is required');
             return;
         }
@@ -569,9 +580,9 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                 ? {
                     ...draft,
                     requestType: 'Incident',
-                    incidentTypeId: selectedIncidentType?.id,
-                    incidentType: selectedIncidentType,
-                    severity: selectedIncidentType?.severity,
+                    incidentTypeId: selectedIncidentTypeId ?? undefined,
+                    incidentType: null,
+                    severity: (severity || selectedIncidentType?.severity || draft.severity) as IncidentSeverity | undefined,
                     impact: (draft.impact || '').trim(),
                     affectedService: (draft.affectedService || '').trim(),
                 }
@@ -609,10 +620,10 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
 
     const taskSpId = toTaskSpId(draft.id);
     const statusOptions = getStatusOptions(draft.type);
-    const derivedSeverity = selectedIncidentType?.severity || draft.severity;
-    const severityBadgeStyle = getSeverityBadgeStyle(derivedSeverity);
+    const derivedSeverity = severity || selectedIncidentType?.severity || draft.severity;
+    const severityBadgeStyle = getSeverityBadgeStyle(derivedSeverity as IncidentSeverity | undefined);
     const derivedPriority = draft.type === 'incident'
-        ? getPriorityFromSeverity(derivedSeverity)
+        ? (derivedSeverity ? getPriorityFromSeverity(derivedSeverity as IncidentSeverity) : draft.priority)
         : draft.priority;
 
     return (
@@ -731,10 +742,10 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                                     <label style={labelStyle} htmlFor="wim-incident-type">
                                         Incident Type <span style={{ color: '#ef4444' }}>*</span>
                                     </label>
-                                    <select
+                                <select
                                         id="wim-incident-type"
-                                        value={selectedIncidentType?.id ?? ''}
-                                        onChange={handleIncidentTypeChange}
+                                    value={selectedIncidentTypeId ?? ''}
+                                    onChange={handleIncidentTypeChange}
                                         disabled={incidentTypesLoading}
                                         style={{
                                             ...inputStyle,
@@ -746,8 +757,8 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                                             <option value="">Loading incident types...</option>
                                         )}
                                         {incidentTypes.map((incidentType) => (
-                                            <option key={incidentType.id} value={incidentType.id}>
-                                                {incidentType.title}
+                                            <option key={incidentType.Id} value={incidentType.Id}>
+                                                {incidentType.Title}
                                             </option>
                                         ))}
                                     </select>
@@ -759,9 +770,12 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                                 </div>
                                 <div>
                                     <label style={labelStyle}>Severity</label>
-                                    <div style={{ ...severityTagBaseStyle, ...severityBadgeStyle }}>
-                                        {derivedSeverity || 'Select incident type'}
-                                    </div>
+                                <input
+                                    type="text"
+                                    value={derivedSeverity || ''}
+                                    readOnly
+                                    style={{ ...inputStyle, opacity: 0.7, cursor: 'not-allowed' }}
+                                />
                                 </div>
                             </div>
 

@@ -271,9 +271,10 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
           {statuses.map((status) => (
             <option key={status} value={status}>{status}</option>
           ))}
-          <option value="Low">Low Priority</option>
-          <option value="Medium">Medium Priority</option>
+          <option value="Critical">Critical Priority</option>
           <option value="High">High Priority</option>
+          <option value="Medium">Medium Priority</option>
+          <option value="Low">Low Priority</option>
         </select>
 
         <button
@@ -452,7 +453,7 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
                               >
                                 {getInitials(task.assignedTo || 'Unassigned')}
                               </span>
-                              <span style={singleLineTextStyle}>{task.assignedTo || 'Unassigned'}</span>
+                              <span style={singleLineTextStyle}>{task.assignedToUser?.name ?? 'Unassigned'}</span>
                             </div>
                           )}
                         </td>
@@ -499,9 +500,10 @@ const TableView: React.FC<ITableViewProps> = ({ tasks, statuses, updateTask, del
                               autoFocus
                               style={getEditorStyle(task.id, 'priority')}
                             >
-                              <option value="Low">Low</option>
-                              <option value="Medium">Medium</option>
+                              <option value="Critical">Critical</option>
                               <option value="High">High</option>
+                              <option value="Medium">Medium</option>
+                              <option value="Low">Low</option>
                             </select>
                           ) : (
                             <span

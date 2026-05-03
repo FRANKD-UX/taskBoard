@@ -35,9 +35,9 @@ var ChartView = function (_a) {
         });
         return initial;
     }, [statuses, tasks]);
-    var priorityOrder = ['High', 'Medium', 'Low'];
+    var priorityOrder = ['Critical', 'High', 'Medium', 'Low'];
     var priorityCounts = (0, react_1.useMemo)(function () {
-        var initial = { High: 0, Medium: 0, Low: 0 };
+        var initial = { Critical: 0, High: 0, Medium: 0, Low: 0 };
         tasks.forEach(function (task) { initial[task.priority] += 1; });
         return initial;
     }, [tasks]);

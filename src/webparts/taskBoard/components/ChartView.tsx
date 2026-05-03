@@ -54,10 +54,10 @@ const ChartView: React.FC<IChartViewProps> = ({ tasks, statuses }): React.ReactE
     return initial;
   }, [statuses, tasks]);
 
-  const priorityOrder: PriorityKey[] = ['High', 'Medium', 'Low'];
+  const priorityOrder: PriorityKey[] = ['Critical', 'High', 'Medium', 'Low'];
 
   const priorityCounts = useMemo<Record<PriorityKey, number>>(() => {
-    const initial: Record<PriorityKey, number> = { High: 0, Medium: 0, Low: 0 };
+    const initial: Record<PriorityKey, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 };
     tasks.forEach((task) => { initial[task.priority] += 1; });
     return initial;
   }, [tasks]);

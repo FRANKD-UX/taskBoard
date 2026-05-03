@@ -54,22 +54,12 @@ export class SharePointService {
                 .select(
                     'Id',
                     'Title',
-                    'Status',
-                    'Priority',
-                    'DueDate',
-                    'StartDate',           // ADDED
-                    'Description',
-                    'RequestType',          // ADDED
-                    'Department',           // ADDED
-                    'Created',              // ADDED
                     'AssignedTo/Id',
                     'AssignedTo/Title',
                     'AssignedTo/EMail',
-                    'AssignedToId',         // ADDED
-                    'Author/Id',
-                    'Author/Title'
+                    'AssignedToId'
                 )
-                .expand('AssignedTo', 'Author')
+                .expand('AssignedTo')
                 .orderBy('Created', false)
                 .top(500)();
 
