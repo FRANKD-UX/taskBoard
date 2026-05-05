@@ -1,13 +1,23 @@
 "use strict";
+// AppLayout.tsx
+//
+// CHANGE LOG
+// ----------
+// - Added 'reports' to PrimaryViewKey so TaskBoard can render the Reports view.
+// - Removed isPlaceholder from the 'reports' nav item so it becomes clickable.
+// - 'settings' remains a placeholder (still labelled "Soon").
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
 var React = tslib_1.__importStar(require("react"));
+var BugReportWidget_1 = tslib_1.__importDefault(require("./BugReportWidget"));
 var theme_1 = require("./theme");
+// 'reports' is now a fully active nav item.
+// 'settings' stays as a placeholder until that feature is built.
 var NAV_ITEMS = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'tasks', label: 'Tasks' },
     { key: 'incidents', label: 'Incidents' },
-    { key: 'reports', label: 'Reports', isPlaceholder: true },
+    { key: 'reports', label: 'Reports' },
     { key: 'settings', label: 'Settings', isPlaceholder: true },
 ];
 var AppLayout = function (_a) {
@@ -37,7 +47,10 @@ var AppLayout = function (_a) {
                 var isActive = item.key === selectedView;
                 var isDisabled = item.isPlaceholder === true;
                 return (React.createElement("button", { key: item.key, type: "button", disabled: isDisabled, onClick: function () {
-                        if (!isDisabled && (item.key === 'dashboard' || item.key === 'tasks' || item.key === 'incidents')) {
+                        if (!isDisabled) {
+                            // Type narrowing: 'settings' is the only non-PrimaryViewKey
+                            // key in NAV_ITEMS and it is always isPlaceholder, so this
+                            // cast is safe here.
                             onSelectView(item.key);
                         }
                     }, style: {
@@ -64,7 +77,8 @@ var AppLayout = function (_a) {
                 padding: '24px',
                 backgroundColor: theme_1.THEME.colors.background,
                 boxSizing: 'border-box',
-            } }, children)));
+            } }, children),
+        React.createElement(BugReportWidget_1.default, null)));
 };
 exports.default = AppLayout;
 //# sourceMappingURL=AppLayout.js.map

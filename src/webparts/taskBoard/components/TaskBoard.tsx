@@ -10,6 +10,7 @@ import CalendarView from './CalendarView';
 import ChartView from './ChartView';
 import GanttView from './GanttView';
 import type { ITaskBoardProps } from './ITaskBoardProps';
+import ReportsView, { type IPowerBiReport } from './ReportsView';
 import TableView from './TableView';
 import type {
     IncidentStatus,
@@ -42,6 +43,43 @@ const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
     { key: 'calendar', label: 'Calendar' },
     { key: 'gantt', label: 'Gantt' },
     { key: 'chart', label: 'Chart' },
+];
+
+// ---------------------------------------------------------------------------
+// Power BI report configuration
+// ---------------------------------------------------------------------------
+//
+// HOW TO ADD A REPORT
+// -------------------
+// 1. Open your report in the Power BI service (app.powerbi.com).
+// 2. Copy the reportId from the URL:
+//      https://app.powerbi.com/groups/<groupId>/reports/<reportId>/…
+// 3. Copy the groupId from the same URL.
+//    For "My Workspace" reports, leave groupId as an empty string.
+// 4. Find your tenant ID in:
+//      Azure portal > Azure Active Directory > Overview > Tenant ID
+// 5. Add an entry to the array below and give it a descriptive label.
+//
+// The user must have at least Viewer access to the workspace in Power BI.
+// The SharePoint / M365 tenant must be the same as the Power BI tenant.
+
+const POWER_BI_REPORTS: IPowerBiReport[] = [
+    // --- Replace the placeholder values below with your real IDs ---
+    {
+        id: 'operations-overview',
+        label: 'Operations Overview',
+        reportId: '9e696574-3c3e-4c71-93ef-98146253db35',
+        groupId: '0fce8c90-eb63-4080-b483-4e23534c0e6e',
+        tenantId: '83223fdc-5c39-40ab-b34a-896fca28d3b2',
+    },
+    // Add more reports here, e.g.:
+    // {
+    //     id: 'incident-trends',
+    //     label: 'Incident Trends',
+    //     reportId: 'ANOTHER_REPORT_ID',
+    //     groupId: 'YOUR_WORKSPACE_ID_HERE',
+    //     tenantId: 'YOUR_TENANT_ID_HERE',
+    // },
 ];
 
 const toRequestType = (type: WorkItemType): TaskRequestType => {
@@ -172,6 +210,59 @@ const resolveUserNameFromId = async (userId: number): Promise<string | null> => 
         }
         return null;
     }
+};
+
+/**
+ * Resolves a SharePoint numeric user ID from an email address or login name.
+ *
+ * STRATEGY (tried in order, stops on first success):
+ *   1. sp.web.ensureUser(email)      — most reliable for AAD-backed accounts.
+ *   2. sp.web.ensureUser(loginName)  — fallback for on-prem / claims accounts.
+ *   3. siteUserInfoList filter       — last resort read-only lookup.
+ *
+ * Returns null if none of the attempts succeed, so the caller can decide
+ * whether to throw or silently unassign.
+ */
+const resolveSharePointUserId = async (
+    email: string,
+    loginName: string
+): Promise<number | null> => {
+    const sp = getSP();
+
+    // Attempt 1: ensureUser by email (AAD UPN)
+    if (email) {
+        try {
+            const result = await sp.web.ensureUser(email);
+            if (result?.Id) return result.Id as number;
+        } catch {
+            // Fall through to next strategy
+        }
+    }
+
+    // Attempt 2: ensureUser by claims login name
+    if (loginName) {
+        try {
+            const result = await sp.web.ensureUser(loginName);
+            if (result?.Id) return result.Id as number;
+        } catch {
+            // Fall through to next strategy
+        }
+    }
+
+    // Attempt 3: direct lookup in UserInformationList by email (read-only, no provisioning)
+    if (email) {
+        try {
+            const userInfo = await sp.web.siteUserInfoList.items
+                .filter(`UserName eq '${email}'`)
+                .select('Id')
+                .top(1)();
+            if (userInfo && userInfo.length > 0) return userInfo[0].Id as number;
+        } catch {
+            // ignore
+        }
+    }
+
+    return null;
 };
 
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
@@ -434,7 +525,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     assignedToEmail: currentUserEmail,
                     assignedToId: undefined,
                     assignedToLoginName: undefined,
-                  }
+                }
                 : task;
 
             let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
@@ -741,8 +832,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                                     backgroundColor: isActive
                                         ? THEME.colors.primary
                                         : isHovered
-                                        ? THEME.colors.primarySoft
-                                        : 'transparent',
+                                            ? THEME.colors.primarySoft
+                                            : 'transparent',
                                     color: isActive ? '#ffffff' : THEME.colors.textPrimary,
                                     border: isActive
                                         ? `1px solid ${THEME.colors.primary}`
@@ -863,12 +954,24 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         );
     };
 
+    const renderReportsView = (): React.ReactElement => (
+        <div style={{ display: 'grid', gap: '16px' }}>
+            {renderWorkspaceHeader(
+                'Reports',
+                'Embedded Power BI reports for operational analytics and performance tracking.'
+            )}
+            <ReportsView reports={POWER_BI_REPORTS} />
+        </div>
+    );
+
     const renderSelectedView = (): React.ReactElement => {
         switch (selectedView) {
             case 'dashboard':
                 return renderDashboardView();
             case 'incidents':
                 return renderIncidentsView();
+            case 'reports':
+                return renderReportsView();
             case 'tasks':
             default:
                 return renderTasksView();

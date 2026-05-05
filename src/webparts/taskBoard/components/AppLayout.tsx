@@ -1,11 +1,21 @@
+// AppLayout.tsx
+//
+// CHANGE LOG
+// ----------
+// - Added 'reports' to PrimaryViewKey so TaskBoard can render the Reports view.
+// - Removed isPlaceholder from the 'reports' nav item so it becomes clickable.
+// - 'settings' remains a placeholder (still labelled "Soon").
+
 import * as React from 'react';
 
+import BugReportWidget from './BugReportWidget';
 import { THEME } from './theme';
 
-export type PrimaryViewKey = 'dashboard' | 'tasks' | 'incidents';
+// 'reports' is now a first-class primary view, not a placeholder.
+export type PrimaryViewKey = 'dashboard' | 'tasks' | 'incidents' | 'reports';
 
 interface INavigationItem {
-    key: PrimaryViewKey | 'reports' | 'settings';
+    key: PrimaryViewKey | 'settings';
     label: string;
     isPlaceholder?: boolean;
 }
@@ -16,11 +26,13 @@ export interface IAppLayoutProps {
     children: React.ReactNode;
 }
 
+// 'reports' is now a fully active nav item.
+// 'settings' stays as a placeholder until that feature is built.
 const NAV_ITEMS: INavigationItem[] = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'tasks', label: 'Tasks' },
     { key: 'incidents', label: 'Incidents' },
-    { key: 'reports', label: 'Reports', isPlaceholder: true },
+    { key: 'reports', label: 'Reports' },
     { key: 'settings', label: 'Settings', isPlaceholder: true },
 ];
 
@@ -74,8 +86,11 @@ const AppLayout: React.FC<IAppLayoutProps> = ({
                                 type="button"
                                 disabled={isDisabled}
                                 onClick={() => {
-                                    if (!isDisabled && (item.key === 'dashboard' || item.key === 'tasks' || item.key === 'incidents')) {
-                                        onSelectView(item.key);
+                                    if (!isDisabled) {
+                                        // Type narrowing: 'settings' is the only non-PrimaryViewKey
+                                        // key in NAV_ITEMS and it is always isPlaceholder, so this
+                                        // cast is safe here.
+                                        onSelectView(item.key as PrimaryViewKey);
                                     }
                                 }}
                                 style={{
@@ -115,6 +130,9 @@ const AppLayout: React.FC<IAppLayoutProps> = ({
             >
                 {children}
             </main>
+
+            {/* Bug report widget — fixed position, floats above all views */}
+            <BugReportWidget />
         </div>
     );
 };

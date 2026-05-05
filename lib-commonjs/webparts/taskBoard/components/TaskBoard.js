@@ -10,6 +10,7 @@ var BoardView_1 = tslib_1.__importDefault(require("./BoardView"));
 var CalendarView_1 = tslib_1.__importDefault(require("./CalendarView"));
 var ChartView_1 = tslib_1.__importDefault(require("./ChartView"));
 var GanttView_1 = tslib_1.__importDefault(require("./GanttView"));
+var ReportsView_1 = tslib_1.__importDefault(require("./ReportsView"));
 var TableView_1 = tslib_1.__importDefault(require("./TableView"));
 var incidentSla_1 = require("./incidentSla");
 var theme_1 = require("./theme");
@@ -27,6 +28,41 @@ var VIEW_TABS = [
     { key: 'calendar', label: 'Calendar' },
     { key: 'gantt', label: 'Gantt' },
     { key: 'chart', label: 'Chart' },
+];
+// ---------------------------------------------------------------------------
+// Power BI report configuration
+// ---------------------------------------------------------------------------
+//
+// HOW TO ADD A REPORT
+// -------------------
+// 1. Open your report in the Power BI service (app.powerbi.com).
+// 2. Copy the reportId from the URL:
+//      https://app.powerbi.com/groups/<groupId>/reports/<reportId>/…
+// 3. Copy the groupId from the same URL.
+//    For "My Workspace" reports, leave groupId as an empty string.
+// 4. Find your tenant ID in:
+//      Azure portal > Azure Active Directory > Overview > Tenant ID
+// 5. Add an entry to the array below and give it a descriptive label.
+//
+// The user must have at least Viewer access to the workspace in Power BI.
+// The SharePoint / M365 tenant must be the same as the Power BI tenant.
+var POWER_BI_REPORTS = [
+    // --- Replace the placeholder values below with your real IDs ---
+    {
+        id: 'operations-overview',
+        label: 'Operations Overview',
+        reportId: '9e696574-3c3e-4c71-93ef-98146253db35',
+        groupId: '0fce8c90-eb63-4080-b483-4e23534c0e6e',
+        tenantId: '83223fdc-5c39-40ab-b34a-896fca28d3b2',
+    },
+    // Add more reports here, e.g.:
+    // {
+    //     id: 'incident-trends',
+    //     label: 'Incident Trends',
+    //     reportId: 'ANOTHER_REPORT_ID',
+    //     groupId: 'YOUR_WORKSPACE_ID_HERE',
+    //     tenantId: 'YOUR_TENANT_ID_HERE',
+    // },
 ];
 var toRequestType = function (type) {
     return type === 'incident' ? 'Incident' : 'Task';
@@ -144,6 +180,71 @@ var resolveUserNameFromId = function (userId) { return tslib_1.__awaiter(void 0,
                 return [3 /*break*/, 7];
             case 7: return [2 /*return*/, null];
             case 8: return [2 /*return*/];
+        }
+    });
+}); };
+/**
+ * Resolves a SharePoint numeric user ID from an email address or login name.
+ *
+ * STRATEGY (tried in order, stops on first success):
+ *   1. sp.web.ensureUser(email)      — most reliable for AAD-backed accounts.
+ *   2. sp.web.ensureUser(loginName)  — fallback for on-prem / claims accounts.
+ *   3. siteUserInfoList filter       — last resort read-only lookup.
+ *
+ * Returns null if none of the attempts succeed, so the caller can decide
+ * whether to throw or silently unassign.
+ */
+var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var sp, result, _a, result, _b, userInfo, _c;
+    return tslib_1.__generator(this, function (_d) {
+        switch (_d.label) {
+            case 0:
+                sp = (0, pnpjsConfig_1.getSP)();
+                if (!email) return [3 /*break*/, 4];
+                _d.label = 1;
+            case 1:
+                _d.trys.push([1, 3, , 4]);
+                return [4 /*yield*/, sp.web.ensureUser(email)];
+            case 2:
+                result = _d.sent();
+                if (result === null || result === void 0 ? void 0 : result.Id)
+                    return [2 /*return*/, result.Id];
+                return [3 /*break*/, 4];
+            case 3:
+                _a = _d.sent();
+                return [3 /*break*/, 4];
+            case 4:
+                if (!loginName) return [3 /*break*/, 8];
+                _d.label = 5;
+            case 5:
+                _d.trys.push([5, 7, , 8]);
+                return [4 /*yield*/, sp.web.ensureUser(loginName)];
+            case 6:
+                result = _d.sent();
+                if (result === null || result === void 0 ? void 0 : result.Id)
+                    return [2 /*return*/, result.Id];
+                return [3 /*break*/, 8];
+            case 7:
+                _b = _d.sent();
+                return [3 /*break*/, 8];
+            case 8:
+                if (!email) return [3 /*break*/, 12];
+                _d.label = 9;
+            case 9:
+                _d.trys.push([9, 11, , 12]);
+                return [4 /*yield*/, sp.web.siteUserInfoList.items
+                        .filter("UserName eq '".concat(email, "'"))
+                        .select('Id')
+                        .top(1)()];
+            case 10:
+                userInfo = _d.sent();
+                if (userInfo && userInfo.length > 0)
+                    return [2 /*return*/, userInfo[0].Id];
+                return [3 /*break*/, 12];
+            case 11:
+                _c = _d.sent();
+                return [3 /*break*/, 12];
+            case 12: return [2 /*return*/, null];
         }
     });
 }); };
@@ -734,12 +835,17 @@ var TaskBoard = function (_a) {
                 } },
                 React.createElement(BoardView_1.default, { tasks: incidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask }))));
     };
+    var renderReportsView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
+        renderWorkspaceHeader('Reports', 'Embedded Power BI reports for operational analytics and performance tracking.'),
+        React.createElement(ReportsView_1.default, { reports: POWER_BI_REPORTS }))); };
     var renderSelectedView = function () {
         switch (selectedView) {
             case 'dashboard':
                 return renderDashboardView();
             case 'incidents':
                 return renderIncidentsView();
+            case 'reports':
+                return renderReportsView();
             case 'tasks':
             default:
                 return renderTasksView();
