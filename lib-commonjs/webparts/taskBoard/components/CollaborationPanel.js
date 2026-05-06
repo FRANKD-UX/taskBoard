@@ -1,13 +1,4 @@
 "use strict";
-// CollaborationPanel.tsx
-//
-// Renders the "In Collaboration With" section inside TaskModal / TaskPanel.
-//
-// What it shows:
-//   - Avatar stack of accepted collaborators.
-//   - A "Request Collaborator" button that opens the PeoplePicker inline.
-//   - A request history list showing Pending and Declined requests
-//     so the task owner can see what is in flight and cancel if needed.
 Object.defineProperty(exports, "__esModule", { value: true });
 var tslib_1 = require("tslib");
 var React = tslib_1.__importStar(require("react"));
@@ -15,20 +6,12 @@ var react_1 = require("react");
 var CollaboratorService_1 = require("../../../services/CollaboratorService");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
 var theme_1 = require("./theme");
-// ---------------------------------------------------------------------------
-// Constants & helpers
-// ---------------------------------------------------------------------------
 var AVATAR_PALETTE = ['#2563eb', '#7c3aed', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899', '#14b8a6'];
 var collaboratorService = new CollaboratorService_1.CollaboratorService();
 var getInitials = function (name) {
     if (!name)
         return '?';
-    return name
-        .split(' ')
-        .filter(function (p) { return p.length > 0; })
-        .slice(0, 2)
-        .map(function (p) { return p[0].toUpperCase(); })
-        .join('');
+    return name.split(' ').filter(function (p) { return p.length > 0; }).slice(0, 2).map(function (p) { return p[0].toUpperCase(); }).join('');
 };
 var getAvatarColor = function (name) {
     if (!name)
@@ -40,56 +23,23 @@ var formatDate = function (iso) {
     if (!iso)
         return '';
     var d = new Date(iso);
-    return isNaN(d.getTime())
-        ? ''
-        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 };
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 var Avatar = function (_a) {
     var collaborator = _a.collaborator, _b = _a.size, size = _b === void 0 ? 30 : _b;
     return (React.createElement("div", { title: "".concat(collaborator.name).concat(collaborator.email ? " \u2014 ".concat(collaborator.email) : ''), style: {
-            width: size,
-            height: size,
-            borderRadius: '50%',
-            backgroundColor: getAvatarColor(collaborator.name),
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            fontWeight: 700,
-            fontSize: size * 0.37,
-            flexShrink: 0,
-            border: '2px solid #ffffff',
-            marginLeft: size > 30 ? 0 : -6,
-            cursor: 'default',
+            width: size, height: size, borderRadius: '50%', backgroundColor: getAvatarColor(collaborator.name),
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 700,
+            fontSize: size * 0.37, flexShrink: 0, border: '2px solid #ffffff', marginLeft: size > 30 ? 0 : -6, cursor: 'default',
         } }, getInitials(collaborator.name)));
 };
 var StatusBadge = function (_a) {
     var status = _a.status;
-    var colorMap = {
-        Pending: '#f59e0b',
-        Accepted: '#22c55e',
-        Declined: '#ef4444',
-    };
-    return (React.createElement("span", { style: {
-            fontSize: '10px',
-            fontWeight: 700,
-            color: '#ffffff',
-            backgroundColor: colorMap[status],
-            borderRadius: '999px',
-            padding: '2px 8px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.3px',
-            flexShrink: 0,
-        } }, status));
+    var colorMap = { Pending: '#f59e0b', Accepted: '#22c55e', Declined: '#ef4444' };
+    return (React.createElement("span", { style: { fontSize: '10px', fontWeight: 700, color: '#ffffff', backgroundColor: colorMap[status], borderRadius: '999px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.3px', flexShrink: 0 } }, status));
 };
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 var CollaborationPanel = function (_a) {
-    var taskSpId = _a.taskSpId, taskTitle = _a.taskTitle, currentUserSpId = _a.currentUserSpId, siteUrl = _a.siteUrl;
+    var taskSpId = _a.taskSpId, taskTitle = _a.taskTitle, currentUserSpId = _a.currentUserSpId;
     var _b = (0, react_1.useState)([]), requests = _b[0], setRequests = _b[1];
     var _c = (0, react_1.useState)(false), isLoading = _c[0], setIsLoading = _c[1];
     var _d = (0, react_1.useState)(false), isRequesting = _d[0], setIsRequesting = _d[1];
@@ -97,9 +47,6 @@ var CollaborationPanel = function (_a) {
     var _f = (0, react_1.useState)(null), selectedUser = _f[0], setSelectedUser = _f[1];
     var _g = (0, react_1.useState)(''), errorMessage = _g[0], setErrorMessage = _g[1];
     var _h = (0, react_1.useState)(''), successMessage = _h[0], setSuccessMessage = _h[1];
-    // -----------------------------------------------------------------------
-    // Data loading
-    // -----------------------------------------------------------------------
     var loadRequests = (0, react_1.useCallback)(function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var data, error_1;
         return tslib_1.__generator(this, function (_a) {
@@ -127,20 +74,10 @@ var CollaborationPanel = function (_a) {
             }
         });
     }); }, [taskSpId]);
-    (0, react_1.useEffect)(function () {
-        loadRequests();
-    }, [loadRequests]);
-    // -----------------------------------------------------------------------
-    // Derived state
-    // -----------------------------------------------------------------------
-    var acceptedCollaborators = requests
-        .filter(function (r) { return r.status === 'Accepted'; })
-        .map(function (r) { return r.collaborator; });
+    (0, react_1.useEffect)(function () { loadRequests(); }, [loadRequests]);
+    var acceptedCollaborators = requests.filter(function (r) { return r.status === 'Accepted'; }).map(function (r) { return r.collaborator; });
     var pendingRequests = requests.filter(function (r) { return r.status === 'Pending'; });
     var declinedRequests = requests.filter(function (r) { return r.status === 'Declined'; });
-    // -----------------------------------------------------------------------
-    // Actions
-    // -----------------------------------------------------------------------
     var handleSendRequest = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var collaboratorSpId, alreadyPending, alreadyAccepted, error_2;
         return tslib_1.__generator(this, function (_a) {
@@ -151,10 +88,6 @@ var CollaborationPanel = function (_a) {
                     collaboratorSpId = selectedUser.id;
                     if (!collaboratorSpId || collaboratorSpId <= 0) {
                         setErrorMessage('Could not resolve the selected user to a SharePoint account. Try selecting them again.');
-                        return [2 /*return*/];
-                    }
-                    if (!siteUrl) {
-                        setErrorMessage('Site URL is not configured. Cannot send collaboration request.');
                         return [2 /*return*/];
                     }
                     setErrorMessage('');
@@ -180,10 +113,6 @@ var CollaborationPanel = function (_a) {
                             taskTitle: taskTitle,
                             collaboratorId: collaboratorSpId,
                             requestedById: currentUserSpId,
-                            // Pass the absolute site URL so createRequest can construct
-                            // correct fetch URLs without relying on sp.web.toUrl() which
-                            // returns a relative path and causes a doubled URL in SPFx.
-                            siteAbsoluteUrl: siteUrl,
                         })];
                 case 3:
                     _a.sent();
@@ -238,30 +167,16 @@ var CollaborationPanel = function (_a) {
         setErrorMessage('');
         setSuccessMessage('');
     };
-    // -----------------------------------------------------------------------
-    // Early return — task not yet saved to SharePoint
-    // -----------------------------------------------------------------------
     if (!taskSpId) {
         return (React.createElement("div", { style: sectionWrapperStyle },
             React.createElement("div", { style: sectionLabelStyle }, "In Collaboration With"),
             React.createElement("div", { style: { fontSize: '13px', color: theme_1.THEME.colors.textSecondary } }, "Save the task first before adding collaborators.")));
     }
-    // -----------------------------------------------------------------------
-    // Render
-    // -----------------------------------------------------------------------
     return (React.createElement("div", { style: sectionWrapperStyle },
         React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
             React.createElement("div", { style: sectionLabelStyle }, "In Collaboration With"),
-            React.createElement("button", { type: "button", onClick: handleToggleRequesting, style: {
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: isRequesting ? theme_1.THEME.colors.textSecondary : '#2563eb',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '2px 6px',
-                } }, isRequesting ? 'Cancel' : '+ Request Collaborator')),
-        isLoading && (React.createElement("div", { style: { fontSize: '13px', color: theme_1.THEME.colors.textSecondary } }, "Loading...")),
+            React.createElement("button", { type: "button", onClick: handleToggleRequesting, style: { fontSize: '12px', fontWeight: 600, color: isRequesting ? theme_1.THEME.colors.textSecondary : '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' } }, isRequesting ? 'Cancel' : '+ Request Collaborator')),
+        isLoading && React.createElement("div", { style: { fontSize: '13px', color: theme_1.THEME.colors.textSecondary } }, "Loading..."),
         !isLoading && acceptedCollaborators.length > 0 && (React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginBottom: '12px' } },
             acceptedCollaborators.map(function (collaborator, index) { return (React.createElement("div", { key: collaborator.email || collaborator.name, style: { marginLeft: index === 0 ? 0 : -6 } },
                 React.createElement(Avatar, { collaborator: collaborator, size: 32 }))); }),
@@ -269,22 +184,10 @@ var CollaborationPanel = function (_a) {
         !isLoading && acceptedCollaborators.length === 0 && !isRequesting && (React.createElement("div", { style: { fontSize: '13px', color: theme_1.THEME.colors.textSecondary, marginBottom: '12px' } }, "No collaborators yet.")),
         isRequesting && (React.createElement("div", { style: requestFormStyle },
             React.createElement("div", { style: { fontSize: '12px', fontWeight: 600, color: theme_1.THEME.colors.textSecondary, marginBottom: '6px' } }, "Search for a person to collaborate with"),
-            React.createElement(PeoplePicker_1.default, { value: selectedUser, onChange: setSelectedUser, placeholder: "Search by name or email...", canEdit: true, siteUrl: siteUrl }),
-            React.createElement("button", { type: "button", onClick: handleSendRequest, disabled: !selectedUser || isSending, style: {
-                    marginTop: '10px',
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    backgroundColor: !selectedUser || isSending ? '#94a3b8' : '#2563eb',
-                    color: '#ffffff',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: !selectedUser || isSending ? 'not-allowed' : 'pointer',
-                    transition: 'background-color 150ms ease',
-                } }, isSending ? 'Sending...' : 'Send Collaboration Request'))),
-        successMessage && (React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, feedbackStyle), { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0' }) }, successMessage)),
-        errorMessage && (React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, feedbackStyle), { backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fecaca' }) }, errorMessage)),
+            React.createElement(PeoplePicker_1.default, { value: selectedUser, onChange: setSelectedUser, placeholder: "Search by name or email...", canEdit: true }),
+            React.createElement("button", { type: "button", onClick: handleSendRequest, disabled: !selectedUser || isSending, style: { marginTop: '10px', width: '100%', padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: !selectedUser || isSending ? '#94a3b8' : '#2563eb', color: '#ffffff', fontSize: '14px', fontWeight: 600, cursor: !selectedUser || isSending ? 'not-allowed' : 'pointer', transition: 'background-color 150ms ease' } }, isSending ? 'Sending...' : 'Send Collaboration Request'))),
+        successMessage && React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, feedbackStyle), { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0' }) }, successMessage),
+        errorMessage && React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, feedbackStyle), { backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fecaca' }) }, errorMessage),
         pendingRequests.length > 0 && (React.createElement("div", { style: { marginTop: '14px' } },
             React.createElement("div", { style: tslib_1.__assign(tslib_1.__assign({}, sectionLabelStyle), { marginBottom: '8px' }) }, "Pending Requests"),
             React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, pendingRequests.map(function (req) { return (React.createElement("div", { key: req.requestId, style: requestRowStyle },
@@ -312,53 +215,11 @@ var CollaborationPanel = function (_a) {
                         formatDate(req.respondedAt))),
                 React.createElement(StatusBadge, { status: req.status }))); }))))));
 };
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-var sectionWrapperStyle = {
-    borderTop: "1px solid ".concat(theme_1.THEME.colors.border),
-    paddingTop: '16px',
-    marginTop: '4px',
-};
-var sectionLabelStyle = {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: theme_1.THEME.colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: '0.4px',
-};
-var requestFormStyle = {
-    backgroundColor: '#f8fafc',
-    border: "1px solid ".concat(theme_1.THEME.colors.border),
-    borderRadius: '10px',
-    padding: '12px',
-    marginBottom: '10px',
-};
-var requestRowStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '8px 10px',
-    backgroundColor: '#f8fafc',
-    border: "1px solid ".concat(theme_1.THEME.colors.border),
-    borderRadius: '8px',
-};
-var feedbackStyle = {
-    fontSize: '13px',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: '1px solid',
-    marginTop: '8px',
-};
-var cancelButtonStyle = {
-    background: 'none',
-    border: 'none',
-    color: theme_1.THEME.colors.textSecondary,
-    fontSize: '18px',
-    cursor: 'pointer',
-    lineHeight: 1,
-    padding: '0 2px',
-    flexShrink: 0,
-};
+var sectionWrapperStyle = { borderTop: "1px solid ".concat(theme_1.THEME.colors.border), paddingTop: '16px', marginTop: '4px' };
+var sectionLabelStyle = { fontSize: '11px', fontWeight: 600, color: theme_1.THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.4px' };
+var requestFormStyle = { backgroundColor: '#f8fafc', border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '10px', padding: '12px', marginBottom: '10px' };
+var requestRowStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', backgroundColor: '#f8fafc', border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '8px' };
+var feedbackStyle = { fontSize: '13px', padding: '10px 12px', borderRadius: '8px', border: '1px solid', marginTop: '8px' };
+var cancelButtonStyle = { background: 'none', border: 'none', color: theme_1.THEME.colors.textSecondary, fontSize: '18px', cursor: 'pointer', lineHeight: 1, padding: '0 2px', flexShrink: 0 };
 exports.default = CollaborationPanel;
 //# sourceMappingURL=CollaborationPanel.js.map

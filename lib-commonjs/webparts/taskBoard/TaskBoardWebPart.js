@@ -17,7 +17,7 @@ var TaskBoardWebPart = /** @class */ (function (_super) {
         return _super !== null && _super.apply(this, arguments) || this;
     }
     TaskBoardWebPart.prototype.onInit = function () {
-        (0, pnpjsConfig_1.initializePnP)(this.context);
+        (0, pnpjsConfig_1.initSP)(this.context);
         return _super.prototype.onInit.call(this);
     };
     TaskBoardWebPart.prototype.render = function () {

@@ -2,11 +2,7 @@
 // CollaboratorService.ts
 //
 // Owns all reads and writes against the TaskCollaborators SharePoint list.
-// Nothing in this file knows about React — it is pure data access logic.
-//
-// Confirmed SP column types on TaskCollaborators (do not change these):
-//   RequestedBy  → User      (single-value) → write as plain number on RequestedById
-//   Collaborator → UserMulti (multi-value)  → write as { results: [id] } on CollaboratorId
+// All operations go through the centralized SP instance bound to the Helpdesk site.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CollaboratorService = void 0;
 var tslib_1 = require("tslib");
@@ -58,22 +54,15 @@ var generateGuid = function () {
         return v.toString(16);
     });
 };
-// Builds the correct write value for a Person field based on its actual SP type.
-// UserMulti fields require { results: [id] }.
-// Single-value User fields require a plain number on the Id-suffix field.
-// Getting this wrong in either direction causes a 400 Bad Request.
 var buildPersonPayload = function (userId, isMulti) {
     return isMulti ? [userId] : userId;
 };
 // ---------------------------------------------------------------------------
-// CollaboratorServiceNew collaboration request: TitleYou have been added as a collaborator on a task.
+// CollaboratorService
 // ---------------------------------------------------------------------------
 var CollaboratorService = /** @class */ (function () {
     function CollaboratorService() {
     }
-    // ---------------------------------------------------------------------------
-    // Public API
-    // ---------------------------------------------------------------------------
     CollaboratorService.prototype.getRequestsForTask = function (taskId) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
             var sp, items, error_1;
@@ -119,15 +108,19 @@ var CollaboratorService = /** @class */ (function () {
             });
         });
     };
+    /**
+     * Create a new collaboration request.
+     * No longer requires siteAbsoluteUrl – uses the hard‑coded Helpdesk site.
+     */
     CollaboratorService.prototype.createRequest = function (params) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var taskId, taskTitle, collaboratorId, requestedById, siteAbsoluteUrl, fieldNames, responseToken, todayIso, payload, listApiUrl, contextInfoUrl, digestResponse, digestJson, requestDigest, addResponse, errorText, addedItem, createdId, created;
+            var taskId, taskTitle, collaboratorId, requestedById, fieldNames, responseToken, todayIso, payload, listApiUrl, contextInfoUrl, digestResponse, digestJson, requestDigest, addResponse, errorText, addedItem, createdId, created;
             var _a;
             var _b, _c, _d, _e, _f;
             return tslib_1.__generator(this, function (_g) {
                 switch (_g.label) {
                     case 0:
-                        taskId = params.taskId, taskTitle = params.taskTitle, collaboratorId = params.collaboratorId, requestedById = params.requestedById, siteAbsoluteUrl = params.siteAbsoluteUrl;
+                        taskId = params.taskId, taskTitle = params.taskTitle, collaboratorId = params.collaboratorId, requestedById = params.requestedById;
                         return [4 /*yield*/, this.getFieldNames()];
                     case 1:
                         fieldNames = _g.sent();
@@ -144,8 +137,8 @@ var CollaboratorService = /** @class */ (function () {
                             _a.RequestedAt = todayIso,
                             _a.ResponseToken = responseToken,
                             _a);
-                        listApiUrl = "".concat(siteAbsoluteUrl, "/_api/web/lists/getByTitle('").concat(LIST_TITLE, "')/items");
-                        contextInfoUrl = "".concat(siteAbsoluteUrl, "/_api/contextinfo");
+                        listApiUrl = "".concat(pnpjsConfig_1.DATA_SITE, "/_api/web/lists/getByTitle('").concat(LIST_TITLE, "')/items");
+                        contextInfoUrl = "".concat(pnpjsConfig_1.DATA_SITE, "/_api/contextinfo");
                         return [4 /*yield*/, fetch(contextInfoUrl, {
                                 method: 'POST',
                                 headers: { Accept: 'application/json;odata=verbose' },
@@ -333,9 +326,6 @@ var CollaboratorService = /** @class */ (function () {
                                 .select('InternalName', 'Title', 'TypeAsString', 'AllowMultipleValues')
                                 .filter("TypeAsString eq 'User' or TypeAsString eq 'UserMulti'")()];
                     case 2:
-                        // Fetch Person field schema so we know the exact internal names
-                        // and whether each column is single-value User or multi-value UserMulti.
-                        // This determines the correct write format on createRequest.
                         fields = _a.sent();
                         return [3 /*break*/, 4];
                     case 3:
@@ -365,9 +355,7 @@ var CollaboratorService = /** @class */ (function () {
                             };
                         };
                         result = {
-                            // Collaborator is UserMulti — confirmed by SP field schema inspection.
                             collaborator: resolve(COLLABORATOR_FIELD_CANDIDATES, 'Collaborator', true),
-                            // RequestedBy is single-value User — confirmed by SP field schema inspection.
                             requestedBy: resolve(REQUESTED_BY_FIELD_CANDIDATES, 'RequestedBy', false),
                         };
                         console.info('CollaboratorService: resolved field names', result);

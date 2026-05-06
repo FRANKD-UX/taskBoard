@@ -6,31 +6,31 @@ import '@pnp/sp/webs';
 import '@pnp/sp/lists';
 import '@pnp/sp/items';
 import '@pnp/sp/site-users/web';
-import { initializePnP } from '../../pnpjsConfig';
+import { initSP } from '../../pnpjsConfig';
 
 import TaskBoard from './components/TaskBoard';
 import type { ITaskBoardProps } from './components/ITaskBoardProps';
 
 export default class TaskBoardWebPart extends BaseClientSideWebPart<{}> {
-  public onInit(): Promise<void> {
-    initializePnP(this.context);
+    public onInit(): Promise<void> {
+        initSP(this.context);
 
-    return super.onInit();
-  }
+        return super.onInit();
+    }
 
-  public render(): void {
-    const element: React.ReactElement<ITaskBoardProps> = React.createElement(TaskBoard, {
-      context: this.context
-    });
+    public render(): void {
+        const element: React.ReactElement<ITaskBoardProps> = React.createElement(TaskBoard, {
+            context: this.context
+        });
 
-    ReactDom.render(element, this.domElement);
-  }
+        ReactDom.render(element, this.domElement);
+    }
 
-  protected onDispose(): void {
-    ReactDom.unmountComponentAtNode(this.domElement);
-  }
+    protected onDispose(): void {
+        ReactDom.unmountComponentAtNode(this.domElement);
+    }
 
-  protected get dataVersion(): Version {
-    return Version.parse('1.0');
-  }
+    protected get dataVersion(): Version {
+        return Version.parse('1.0');
+    }
 }

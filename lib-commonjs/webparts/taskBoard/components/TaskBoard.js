@@ -29,25 +29,8 @@ var VIEW_TABS = [
     { key: 'gantt', label: 'Gantt' },
     { key: 'chart', label: 'Chart' },
 ];
-// ---------------------------------------------------------------------------
-// Power BI report configuration
-// ---------------------------------------------------------------------------
-//
-// HOW TO ADD A REPORT
-// -------------------
-// 1. Open your report in the Power BI service (app.powerbi.com).
-// 2. Copy the reportId from the URL:
-//      https://app.powerbi.com/groups/<groupId>/reports/<reportId>/…
-// 3. Copy the groupId from the same URL.
-//    For "My Workspace" reports, leave groupId as an empty string.
-// 4. Find your tenant ID in:
-//      Azure portal > Azure Active Directory > Overview > Tenant ID
-// 5. Add an entry to the array below and give it a descriptive label.
-//
-// The user must have at least Viewer access to the workspace in Power BI.
-// The SharePoint / M365 tenant must be the same as the Power BI tenant.
+// Power BI report configuration (unchanged)
 var POWER_BI_REPORTS = [
-    // --- Replace the placeholder values below with your real IDs ---
     {
         id: 'operations-overview',
         label: 'Operations Overview',
@@ -55,14 +38,6 @@ var POWER_BI_REPORTS = [
         groupId: '0fce8c90-eb63-4080-b483-4e23534c0e6e',
         tenantId: '83223fdc-5c39-40ab-b34a-896fca28d3b2',
     },
-    // Add more reports here, e.g.:
-    // {
-    //     id: 'incident-trends',
-    //     label: 'Incident Trends',
-    //     reportId: 'ANOTHER_REPORT_ID',
-    //     groupId: 'YOUR_WORKSPACE_ID_HERE',
-    //     tenantId: 'YOUR_TENANT_ID_HERE',
-    // },
 ];
 var toRequestType = function (type) {
     return type === 'incident' ? 'Incident' : 'Task';
@@ -143,10 +118,6 @@ var reorderTasksAfterDrag = function (tasks, result, statuses) {
     var reorderedIds = new Set(reorderedRelevantTasks.map(function (task) { return task.id; }));
     return tslib_1.__spreadArray(tslib_1.__spreadArray([], tasks.filter(function (task) { return !reorderedIds.has(task.id); }), true), reorderedRelevantTasks, true);
 };
-/**
- * Helper: resolve a user's display name from a SharePoint user ID.
- * This is a fallback when the initial query doesn't expand the AssignedTo person field.
- */
 var resolveUserNameFromId = function (userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, user, _a, userInfo, _b;
     return tslib_1.__generator(this, function (_c) {
@@ -183,17 +154,6 @@ var resolveUserNameFromId = function (userId) { return tslib_1.__awaiter(void 0,
         }
     });
 }); };
-/**
- * Resolves a SharePoint numeric user ID from an email address or login name.
- *
- * STRATEGY (tried in order, stops on first success):
- *   1. sp.web.ensureUser(email)      — most reliable for AAD-backed accounts.
- *   2. sp.web.ensureUser(loginName)  — fallback for on-prem / claims accounts.
- *   3. siteUserInfoList filter       — last resort read-only lookup.
- *
- * Returns null if none of the attempts succeed, so the caller can decide
- * whether to throw or silently unassign.
- */
 var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, result, _a, result, _b, userInfo, _c;
     return tslib_1.__generator(this, function (_d) {
@@ -267,6 +227,7 @@ var TaskBoard = function (_a) {
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
     (0, react_1.useEffect)(function () {
         window.spfxContext = context;
+        (0, pnpjsConfig_1.initSP)(context); // <-- INITIALIZE ONCE HERE
     }, [context]);
     var mapServiceItemToTask = React.useCallback(function (item, createdByFallback) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var type, priority, assignedToName, userId, resolvedName;
@@ -280,7 +241,6 @@ var TaskBoard = function (_a) {
                         : toTaskPriority(item.priority);
                     assignedToName = '';
                     if (item.assignedTo) {
-                        // If it's an object (full expand), extract Title.
                         if (typeof item.assignedTo === 'object') {
                             assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
                         }
@@ -298,7 +258,6 @@ var TaskBoard = function (_a) {
                         assignedToName = resolvedName;
                     _d.label = 2;
                 case 2:
-                    // If still empty and we have an email, fallback to email prefix.
                     if (!assignedToName && item.assignedToEmail) {
                         assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
                     }
@@ -340,7 +299,6 @@ var TaskBoard = function (_a) {
             }
         });
     }); }, []);
-    // Load tasks and resolve missing user names
     var loadAndMapTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var sp, user_1, items, mappedTasks, error_1;
         var _a;
@@ -375,7 +333,6 @@ var TaskBoard = function (_a) {
             }
         });
     }); };
-    // Initial load
     (0, react_1.useEffect)(function () {
         var initialize = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
             var sp, user, role, roleError_1, notificationService, error_2;
@@ -413,7 +370,7 @@ var TaskBoard = function (_a) {
                         _b.sent();
                         return [4 /*yield*/, loadAndMapTasks()];
                     case 7:
-                        _b.sent(); // <-- now uses async mapping with user resolution
+                        _b.sent();
                         return [3 /*break*/, 10];
                     case 8:
                         error_2 = _b.sent();
@@ -427,8 +384,7 @@ var TaskBoard = function (_a) {
             });
         }); };
         initialize();
-    }, [context]); // context is stable enough for initial load
-    // Periodic refresh
+    }, [context]);
     (0, react_1.useEffect)(function () {
         if (isLoading || !currentUserName)
             return;
@@ -459,7 +415,6 @@ var TaskBoard = function (_a) {
         }); }, 60000);
         return function () { return clearInterval(interval); };
     }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
-    // View switch animation
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;
@@ -512,7 +467,6 @@ var TaskBoard = function (_a) {
     };
     var handleNewTask = function (status, type) {
         var today = getTodayIso();
-        var requestType = type === 'incident' ? 'Incident' : 'Task';
         var draft = {
             id: "".concat(TEMP_ID_PREFIX).concat(Date.now()),
             type: type,
@@ -523,7 +477,7 @@ var TaskBoard = function (_a) {
             startDate: today,
             dueDate: undefined,
             createdAt: new Date().toISOString(),
-            requestType: requestType,
+            requestType: toRequestType(type),
             department: 'IT',
             description: '',
             assignedTo: canAssign ? '' : currentUserName,
@@ -699,46 +653,24 @@ var TaskBoard = function (_a) {
         }
         setWorkItems(function (prev) { return prev.map(function (item) { return (item.id === id ? tslib_1.__assign(tslib_1.__assign({}, item), nextUpdates) : item); }); });
     };
-    var renderLoadingState = function (message) { return (React.createElement("div", { style: {
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '300px',
-            color: theme_1.THEME.colors.textSecondary,
-            backgroundColor: theme_1.THEME.colors.panel,
-            border: "1px solid ".concat(theme_1.THEME.colors.border),
-            borderRadius: '16px',
-        } }, message)); };
-    var renderWorkspaceHeader = function (title, description) { return (React.createElement("div", { style: {
-            backgroundColor: theme_1.THEME.colors.panel,
-            border: "1px solid ".concat(theme_1.THEME.colors.border),
-            borderRadius: '16px',
-            padding: '20px 24px',
-            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
-        } },
+    var renderLoadingState = function (message) { return (React.createElement("div", { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', color: theme_1.THEME.colors.textSecondary, backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px' } }, message)); };
+    var renderWorkspaceHeader = function (title, description) { return (React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' } },
         React.createElement("h1", { style: { margin: 0, fontSize: '24px', color: theme_1.THEME.colors.textStrong } }, title),
         React.createElement("p", { style: { margin: '8px 0 0 0', color: theme_1.THEME.colors.textSecondary, fontSize: '14px' } }, description))); };
     var renderTaskWorkspaceView = function (view) {
-        if (isLoading) {
+        if (isLoading)
             return renderLoadingState('Loading tasks...');
-        }
         switch (view) {
             case 'board':
-                return (React.createElement(BoardView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, type: "task", onTaskClick: handleTaskClick, onNewTask: handleNewTask }));
+                return React.createElement(BoardView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, type: "task", onTaskClick: handleTaskClick, onNewTask: handleNewTask });
             case 'table':
-                return (React.createElement(TableView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, updateTask: handleUpdateTask, deleteTask: handleDeleteTask, canAssign: canAssign }));
+                return React.createElement(TableView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, updateTask: handleUpdateTask, deleteTask: handleDeleteTask, canAssign: canAssign });
             case 'calendar':
-                return (React.createElement(CalendarView_1.default, { tasks: taskItems, onTaskClick: function (id) {
-                        var task = taskItems.find(function (item) { return item.id === id; });
-                        if (task)
-                            handleTaskClick(task);
-                    } }));
+                return React.createElement(CalendarView_1.default, { tasks: taskItems, onTaskClick: function (id) { var task = taskItems.find(function (item) { return item.id === id; }); if (task)
+                        handleTaskClick(task); } });
             case 'gantt':
-                return (React.createElement(GanttView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, onTaskClick: function (id) {
-                        var task = taskItems.find(function (item) { return item.id === id; });
-                        if (task)
-                            handleTaskClick(task);
-                    } }));
+                return React.createElement(GanttView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, onTaskClick: function (id) { var task = taskItems.find(function (item) { return item.id === id; }); if (task)
+                        handleTaskClick(task); } });
             case 'chart':
                 return React.createElement(ChartView_1.default, { tasks: taskItems, statuses: TASK_STATUSES });
             default:
@@ -747,31 +679,14 @@ var TaskBoard = function (_a) {
     };
     var renderTasksView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
         renderWorkspaceHeader('Tasks', 'Operational planning, delivery tracking, and cross-team execution.'),
-        React.createElement("div", { style: {
-                backgroundColor: theme_1.THEME.colors.panel,
-                border: "1px solid ".concat(theme_1.THEME.colors.border),
-                borderRadius: '16px',
-                overflow: 'hidden',
-            } },
-            React.createElement("div", { style: {
-                    display: 'flex',
-                    gap: '4px',
-                    padding: '12px 16px 0 16px',
-                    backgroundColor: theme_1.THEME.colors.panel,
-                    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
-                } }, VIEW_TABS.map(function (tab) {
+        React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
+            React.createElement("div", { style: { display: 'flex', gap: '4px', padding: '12px 16px 0 16px', backgroundColor: theme_1.THEME.colors.panel, borderBottom: "1px solid ".concat(theme_1.THEME.colors.border) } }, VIEW_TABS.map(function (tab) {
                 var isActive = activeView === tab.key;
                 var isHovered = hoveredTab === tab.key;
                 return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
-                        backgroundColor: isActive
-                            ? theme_1.THEME.colors.primary
-                            : isHovered
-                                ? theme_1.THEME.colors.primarySoft
-                                : 'transparent',
+                        backgroundColor: isActive ? theme_1.THEME.colors.primary : isHovered ? theme_1.THEME.colors.primarySoft : 'transparent',
                         color: isActive ? '#ffffff' : theme_1.THEME.colors.textPrimary,
-                        border: isActive
-                            ? "1px solid ".concat(theme_1.THEME.colors.primary)
-                            : '1px solid transparent',
+                        border: isActive ? "1px solid ".concat(theme_1.THEME.colors.primary) : '1px solid transparent',
                         borderRadius: '8px',
                         padding: '8px 14px',
                         cursor: 'pointer',
@@ -780,59 +695,33 @@ var TaskBoard = function (_a) {
                         transition: 'background-color 160ms ease, color 160ms ease',
                     } }, tab.label));
             })),
-            React.createElement("div", { style: {
-                    transition: 'opacity 180ms ease, transform 180ms ease',
-                    opacity: isViewVisible ? 1 : 0,
-                    transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
-                } }, renderTaskWorkspaceView(displayedView))))); };
+            React.createElement("div", { style: { transition: 'opacity 180ms ease, transform 180ms ease', opacity: isViewVisible ? 1 : 0, transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)' } }, renderTaskWorkspaceView(displayedView))))); };
     var renderDashboardView = function () {
         var openTaskCount = taskItems.filter(function (item) { return item.status !== 'Completed'; }).length;
         var openIncidentCount = incidentItems.filter(function (item) { return item.status !== 'Resolved'; }).length;
         var criticalIncidentCount = incidentItems.filter(function (item) { return item.severity === 'P1'; }).length;
         var assignedCount = taskItems.filter(function (item) { return Boolean(item.assignedTo); }).length;
-        if (isLoading) {
+        if (isLoading)
             return renderLoadingState('Loading dashboard...');
-        }
         return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
             renderWorkspaceHeader('Dashboard', 'Portfolio snapshot across active tasks and operational incidents.'),
-            React.createElement("div", { style: {
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: '16px',
-                } }, [
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' } }, [
                 { label: 'Open Tasks', value: openTaskCount.toString() },
                 { label: 'Assigned Tasks', value: assignedCount.toString() },
                 { label: 'Open Incidents', value: openIncidentCount.toString() },
                 { label: 'P1 Incidents', value: criticalIncidentCount.toString() },
-            ].map(function (card) { return (React.createElement("div", { key: card.label, style: {
-                    backgroundColor: theme_1.THEME.colors.panel,
-                    border: "1px solid ".concat(theme_1.THEME.colors.border),
-                    borderRadius: '16px',
-                    padding: '18px 20px',
-                    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
-                } },
+            ].map(function (card) { return (React.createElement("div", { key: card.label, style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' } },
                 React.createElement("div", { style: { fontSize: '12px', color: theme_1.THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' } }, card.label),
                 React.createElement("div", { style: { marginTop: '10px', fontSize: '30px', fontWeight: 700, color: theme_1.THEME.colors.textStrong } }, card.value))); })),
-            React.createElement("div", { style: {
-                    backgroundColor: theme_1.THEME.colors.panel,
-                    border: "1px solid ".concat(theme_1.THEME.colors.border),
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                } },
+            React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
                 React.createElement(ChartView_1.default, { tasks: taskItems, statuses: TASK_STATUSES }))));
     };
     var renderIncidentsView = function () {
-        if (isLoading) {
+        if (isLoading)
             return renderLoadingState('Loading incidents...');
-        }
         return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
             renderWorkspaceHeader('Incidents', 'Track operational disruptions with severity, ownership, and impact context.'),
-            React.createElement("div", { style: {
-                    backgroundColor: theme_1.THEME.colors.panel,
-                    border: "1px solid ".concat(theme_1.THEME.colors.border),
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                } },
+            React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
                 React.createElement(BoardView_1.default, { tasks: incidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask }))));
     };
     var renderReportsView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
@@ -840,20 +729,16 @@ var TaskBoard = function (_a) {
         React.createElement(ReportsView_1.default, { reports: POWER_BI_REPORTS }))); };
     var renderSelectedView = function () {
         switch (selectedView) {
-            case 'dashboard':
-                return renderDashboardView();
-            case 'incidents':
-                return renderIncidentsView();
-            case 'reports':
-                return renderReportsView();
+            case 'dashboard': return renderDashboardView();
+            case 'incidents': return renderIncidentsView();
+            case 'reports': return renderReportsView();
             case 'tasks':
-            default:
-                return renderTasksView();
+            default: return renderTasksView();
         }
     };
     return (React.createElement(react_beautiful_dnd_1.DragDropContext, { onDragEnd: handleDragEnd },
         React.createElement(AppLayout_1.default, { selectedView: selectedView, onSelectView: setSelectedView }, renderSelectedView()),
-        React.createElement(WorkItemModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: context.pageContext.web.absoluteUrl, context: context, currentUserName: currentUserName, currentUserSpId: currentUserSpId, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
+        React.createElement(WorkItemModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: pnpjsConfig_1.DATA_SITE, context: context, currentUserName: currentUserName, currentUserSpId: currentUserSpId, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
 };
 exports.default = TaskBoard;
 //# sourceMappingURL=TaskBoard.js.map

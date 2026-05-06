@@ -1,18 +1,14 @@
 // CollaboratorService.ts
 //
 // Owns all reads and writes against the TaskCollaborators SharePoint list.
-// Nothing in this file knows about React — it is pure data access logic.
-//
-// Confirmed SP column types on TaskCollaborators (do not change these):
-//   RequestedBy  → User      (single-value) → write as plain number on RequestedById
-//   Collaborator → UserMulti (multi-value)  → write as { results: [id] } on CollaboratorId
+// All operations go through the centralized SP instance bound to the Helpdesk site.
 
-import { getSP } from '../pnpjsConfig';
+import { getSP, DATA_SITE } from "../pnpjsConfig";
 import type {
     ICollaborator,
     ICollaborationRequest,
     CollaborationStatus,
-} from '../webparts/taskBoard/components/TaskTypes';
+} from "../webparts/taskBoard/components/TaskTypes";
 
 // ---------------------------------------------------------------------------
 // SharePoint REST API shapes
@@ -41,8 +37,6 @@ interface ISPCollaboratorItem {
 interface IPersonFieldNames {
     internalName: string;
     idSuffixName: string;
-    // True when SP reports the column as UserMulti.
-    // Determines whether we send { results: [id] } or a plain number on writes.
     isMulti: boolean;
 }
 
@@ -94,10 +88,6 @@ const generateGuid = (): string => {
     });
 };
 
-// Builds the correct write value for a Person field based on its actual SP type.
-// UserMulti fields require { results: [id] }.
-// Single-value User fields require a plain number on the Id-suffix field.
-// Getting this wrong in either direction causes a 400 Bad Request.
 const buildPersonPayload = (
     userId: number,
     isMulti: boolean
@@ -105,8 +95,7 @@ const buildPersonPayload = (
     isMulti ? [userId] : userId;
 
 // ---------------------------------------------------------------------------
-// CollaboratorServiceNew collaboration request: TitleYou have been added as a collaborator on a task.
- 
+// CollaboratorService
 // ---------------------------------------------------------------------------
 
 export class CollaboratorService {
@@ -116,13 +105,8 @@ export class CollaboratorService {
         requestedBy: IPersonFieldNames;
     }>;
 
-    // ---------------------------------------------------------------------------
-    // Public API
-    // ---------------------------------------------------------------------------
-
     public async getRequestsForTask(taskId: number): Promise<ICollaborationRequest[]> {
         const sp = getSP();
-
         try {
             const items = await sp.web.lists
                 .getByTitle(LIST_TITLE)
@@ -162,22 +146,22 @@ export class CollaboratorService {
             .map((r) => r.collaborator);
     }
 
+    /**
+     * Create a new collaboration request.
+     * No longer requires siteAbsoluteUrl – uses the hard‑coded Helpdesk site.
+     */
     public async createRequest(params: {
         taskId: number;
         taskTitle: string;
         collaboratorId: number;
         requestedById: number;
-        siteAbsoluteUrl: string;
     }): Promise<ICollaborationRequest> {
-        const { taskId, taskTitle, collaboratorId, requestedById, siteAbsoluteUrl } = params;
+        const { taskId, taskTitle, collaboratorId, requestedById } = params;
 
         const fieldNames = await this.getFieldNames();
         const responseToken = generateGuid();
         const todayIso = new Date().toISOString().split('T')[0];
 
-        // Each Person field gets the correct wire format for its actual SP type:
-        //   Collaborator → UserMulti → { results: [id] }
-        //   RequestedBy  → User      → plain number
         const payload: Record<string, unknown> = {
             Title: `Task ${taskId} collaboration request`,
             TaskId: String(taskId),
@@ -195,8 +179,8 @@ export class CollaboratorService {
             ResponseToken: responseToken,
         };
 
-        const listApiUrl = `${siteAbsoluteUrl}/_api/web/lists/getByTitle('${LIST_TITLE}')/items`;
-        const contextInfoUrl = `${siteAbsoluteUrl}/_api/contextinfo`;
+        const listApiUrl = `${DATA_SITE}/_api/web/lists/getByTitle('${LIST_TITLE}')/items`;
+        const contextInfoUrl = `${DATA_SITE}/_api/contextinfo`;
 
         const digestResponse = await fetch(contextInfoUrl, {
             method: 'POST',
@@ -252,7 +236,6 @@ export class CollaboratorService {
 
     public async getRequestById(requestId: number): Promise<ICollaborationRequest | null> {
         const sp = getSP();
-
         try {
             const item = await sp.web.lists
                 .getByTitle(LIST_TITLE)
@@ -295,10 +278,8 @@ export class CollaboratorService {
         collaboratorId: number
     ): Promise<boolean> {
         const sp = getSP();
-
         try {
             const fieldNames = await this.getFieldNames();
-
             const items = await sp.web.lists
                 .getByTitle(LIST_TITLE)
                 .items
@@ -320,7 +301,6 @@ export class CollaboratorService {
         collaboratorSpId: number
     ): Promise<void> {
         const sp = getSP();
-
         const item = await sp.web.lists
             .getByTitle(taskListTitle)
             .items.getById(taskSpId)
@@ -359,13 +339,9 @@ export class CollaboratorService {
         requestedBy: IPersonFieldNames;
     }> {
         const sp = getSP();
-
         let fields: any[] = [];
 
         try {
-            // Fetch Person field schema so we know the exact internal names
-            // and whether each column is single-value User or multi-value UserMulti.
-            // This determines the correct write format on createRequest.
             fields = await sp.web.lists
                 .getByTitle(LIST_TITLE)
                 .fields
@@ -409,9 +385,7 @@ export class CollaboratorService {
         };
 
         const result = {
-            // Collaborator is UserMulti — confirmed by SP field schema inspection.
             collaborator: resolve(COLLABORATOR_FIELD_CANDIDATES, 'Collaborator', true),
-            // RequestedBy is single-value User — confirmed by SP field schema inspection.
             requestedBy: resolve(REQUESTED_BY_FIELD_CANDIDATES, 'RequestedBy', false),
         };
 

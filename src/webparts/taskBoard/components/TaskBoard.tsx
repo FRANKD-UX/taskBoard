@@ -25,7 +25,7 @@ import type {
 import { buildIncidentSla, getPriorityFromSeverity } from './incidentSla';
 import { THEME } from './theme';
 import WorkItemModal from './WorkItemModal';
-import { getSP } from '../../../pnpjsConfig';
+import { initSP, getSP, DATA_SITE } from '../../../pnpjsConfig';
 import { TaskService } from '../../../services/TaskService';
 import { NotificationService } from '../../../services/NotificationService';
 import { getUserRole } from '../../../services/UserRoleService';
@@ -45,26 +45,8 @@ const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
     { key: 'chart', label: 'Chart' },
 ];
 
-// ---------------------------------------------------------------------------
-// Power BI report configuration
-// ---------------------------------------------------------------------------
-//
-// HOW TO ADD A REPORT
-// -------------------
-// 1. Open your report in the Power BI service (app.powerbi.com).
-// 2. Copy the reportId from the URL:
-//      https://app.powerbi.com/groups/<groupId>/reports/<reportId>/…
-// 3. Copy the groupId from the same URL.
-//    For "My Workspace" reports, leave groupId as an empty string.
-// 4. Find your tenant ID in:
-//      Azure portal > Azure Active Directory > Overview > Tenant ID
-// 5. Add an entry to the array below and give it a descriptive label.
-//
-// The user must have at least Viewer access to the workspace in Power BI.
-// The SharePoint / M365 tenant must be the same as the Power BI tenant.
-
+// Power BI report configuration (unchanged)
 const POWER_BI_REPORTS: IPowerBiReport[] = [
-    // --- Replace the placeholder values below with your real IDs ---
     {
         id: 'operations-overview',
         label: 'Operations Overview',
@@ -72,14 +54,6 @@ const POWER_BI_REPORTS: IPowerBiReport[] = [
         groupId: '0fce8c90-eb63-4080-b483-4e23534c0e6e',
         tenantId: '83223fdc-5c39-40ab-b34a-896fca28d3b2',
     },
-    // Add more reports here, e.g.:
-    // {
-    //     id: 'incident-trends',
-    //     label: 'Incident Trends',
-    //     reportId: 'ANOTHER_REPORT_ID',
-    //     groupId: 'YOUR_WORKSPACE_ID_HERE',
-    //     tenantId: 'YOUR_TENANT_ID_HERE',
-    // },
 ];
 
 const toRequestType = (type: WorkItemType): TaskRequestType => {
@@ -185,19 +159,13 @@ const reorderTasksAfterDrag = (
     ];
 };
 
-/**
- * Helper: resolve a user's display name from a SharePoint user ID.
- * This is a fallback when the initial query doesn't expand the AssignedTo person field.
- */
 const resolveUserNameFromId = async (userId: number): Promise<string | null> => {
     const sp = getSP();
     try {
-        // Try getById first (for site users)
         const user = await sp.web.siteUsers.getById(userId)();
         return user?.Title || null;
     } catch {
         try {
-            // Fallback: get the list item from UserInformationList (more reliable)
             const userInfo = await sp.web.siteUserInfoList.items
                 .filter(`Id eq ${userId}`)
                 .select('Id,Title')
@@ -212,44 +180,23 @@ const resolveUserNameFromId = async (userId: number): Promise<string | null> => 
     }
 };
 
-/**
- * Resolves a SharePoint numeric user ID from an email address or login name.
- *
- * STRATEGY (tried in order, stops on first success):
- *   1. sp.web.ensureUser(email)      — most reliable for AAD-backed accounts.
- *   2. sp.web.ensureUser(loginName)  — fallback for on-prem / claims accounts.
- *   3. siteUserInfoList filter       — last resort read-only lookup.
- *
- * Returns null if none of the attempts succeed, so the caller can decide
- * whether to throw or silently unassign.
- */
 const resolveSharePointUserId = async (
     email: string,
     loginName: string
 ): Promise<number | null> => {
     const sp = getSP();
-
-    // Attempt 1: ensureUser by email (AAD UPN)
     if (email) {
         try {
             const result = await sp.web.ensureUser(email);
             if (result?.Id) return result.Id as number;
-        } catch {
-            // Fall through to next strategy
-        }
+        } catch { }
     }
-
-    // Attempt 2: ensureUser by claims login name
     if (loginName) {
         try {
             const result = await sp.web.ensureUser(loginName);
             if (result?.Id) return result.Id as number;
-        } catch {
-            // Fall through to next strategy
-        }
+        } catch { }
     }
-
-    // Attempt 3: direct lookup in UserInformationList by email (read-only, no provisioning)
     if (email) {
         try {
             const userInfo = await sp.web.siteUserInfoList.items
@@ -257,11 +204,8 @@ const resolveSharePointUserId = async (
                 .select('Id')
                 .top(1)();
             if (userInfo && userInfo.length > 0) return userInfo[0].Id as number;
-        } catch {
-            // ignore
-        }
+        } catch { }
     }
-
     return null;
 };
 
@@ -286,6 +230,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     useEffect(() => {
         (window as any).spfxContext = context;
+        initSP(context);   // <-- INITIALIZE ONCE HERE
     }, [context]);
 
     const mapServiceItemToTask = React.useCallback(async (item: any, createdByFallback: string): Promise<Task> => {
@@ -294,18 +239,14 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             ? getPriorityFromSeverity(item.severity)
             : toTaskPriority(item.priority);
 
-        // Extract assignedTo name – may be missing due to REST fallback.
         let assignedToName = '';
         if (item.assignedTo) {
-            // If it's an object (full expand), extract Title.
             if (typeof item.assignedTo === 'object') {
                 assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
             } else {
                 assignedToName = String(item.assignedTo);
             }
         }
-
-        // If we still have no name but have an ID, try to resolve it.
         if (!assignedToName) {
             const userId = item.assignedToId;
             if (userId && userId > 0) {
@@ -313,8 +254,6 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 if (resolvedName) assignedToName = resolvedName;
             }
         }
-
-        // If still empty and we have an email, fallback to email prefix.
         if (!assignedToName && item.assignedToEmail) {
             assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
         }
@@ -356,20 +295,16 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
     }, []);
 
-    // Load tasks and resolve missing user names
     const loadAndMapTasks = async (): Promise<void> => {
         if (!taskService) return;
-
         try {
             const sp = getSP();
             const user = await sp.web.currentUser();
-
             setCurrentUserName(user.Title || '');
             setCurrentUserEmail(user.Email || '');
             setCurrentUserSpId((user as any).Id ?? null);
 
             const items = await taskService.getTasks();
-            // Map each item asynchronously (for user name resolution)
             const mappedTasks = await Promise.all(
                 items.map((item: any) => mapServiceItemToTask(item, user.Title || ''))
             );
@@ -379,12 +314,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         }
     };
 
-    // Initial load
     useEffect(() => {
         const initialize = async () => {
             try {
                 setIsLoading(true);
-
                 const sp = getSP();
                 const user = await sp.web.currentUser();
                 setCurrentUserName(user.Title || '');
@@ -403,22 +336,18 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 taskService.setNotificationService(notificationService);
 
                 await taskService.checkAndEscalateSLAs();
-                await loadAndMapTasks(); // <-- now uses async mapping with user resolution
-
+                await loadAndMapTasks();
             } catch (error) {
                 console.error('TaskBoard: initial load failed', error);
             } finally {
                 setIsLoading(false);
             }
         };
-
         initialize();
-    }, [context]); // context is stable enough for initial load
+    }, [context]);
 
-    // Periodic refresh
     useEffect(() => {
         if (isLoading || !currentUserName) return;
-
         const interval = setInterval(async () => {
             try {
                 await taskService.checkAndEscalateSLAs();
@@ -431,11 +360,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 console.error('Periodic refresh failed', error);
             }
         }, 60000);
-
         return () => clearInterval(interval);
     }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
 
-    // View switch animation
     useEffect(() => {
         if (activeView === displayedView) return;
         setIsViewVisible(false);
@@ -449,14 +376,11 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const handleDragEnd = async (result: DropResult): Promise<void> => {
         const { destination, draggableId } = result;
         if (!destination) return;
-
         const draggedItem = workItems.find((item) => item.id === draggableId);
         if (!draggedItem) return;
-
         const statuses = getStatusesForType(draggedItem.type);
         const newStatus = destination.droppableId as WorkItemStatus;
         if (statuses.indexOf(newStatus) === -1) return;
-
         try {
             await taskService.updateTask(Number(draggableId), {
                 status: newStatus,
@@ -477,7 +401,6 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const handleNewTask = (status: WorkItemStatus, type: WorkItemType): void => {
         const today = getTodayIso();
-        const requestType: TaskRequestType = type === 'incident' ? 'Incident' : 'Task';
         const draft: Task = {
             id: `${TEMP_ID_PREFIX}${Date.now()}`,
             type,
@@ -488,7 +411,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             startDate: today,
             dueDate: undefined,
             createdAt: new Date().toISOString(),
-            requestType,
+            requestType: toRequestType(type),
             department: 'IT',
             description: '',
             assignedTo: canAssign ? '' : currentUserName,
@@ -531,7 +454,6 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             let finalAssigneeId: number | null = effectiveTask.assignedToId ?? null;
             let finalAssigneeName = effectiveTask.assignedTo || '';
 
-            // If we need to resolve the user (no valid ID but email exists)
             if (
                 (!finalAssigneeId || finalAssigneeId <= 0) &&
                 (effectiveTask.assignedToEmail || effectiveTask.assignedToLoginName)
@@ -551,7 +473,6 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 finalAssigneeName = '';
             }
 
-            // ... rest of save logic unchanged (incident type handling, SLA, etc.)
             const incidentType = effectiveTask.type === 'incident'
                 ? effectiveTask.incidentType ?? null
                 : null;
@@ -709,86 +630,30 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     };
 
     const renderLoadingState = (message: string): React.ReactElement => (
-        <div
-            style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '300px',
-                color: THEME.colors.textSecondary,
-                backgroundColor: THEME.colors.panel,
-                border: `1px solid ${THEME.colors.border}`,
-                borderRadius: '16px',
-            }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', color: THEME.colors.textSecondary, backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px' }}>
             {message}
         </div>
     );
 
     const renderWorkspaceHeader = (title: string, description: string): React.ReactElement => (
-        <div
-            style={{
-                backgroundColor: THEME.colors.panel,
-                border: `1px solid ${THEME.colors.border}`,
-                borderRadius: '16px',
-                padding: '20px 24px',
-                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
-            }}
-        >
+        <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
             <h1 style={{ margin: 0, fontSize: '24px', color: THEME.colors.textStrong }}>{title}</h1>
-            <p style={{ margin: '8px 0 0 0', color: THEME.colors.textSecondary, fontSize: '14px' }}>
-                {description}
-            </p>
+            <p style={{ margin: '8px 0 0 0', color: THEME.colors.textSecondary, fontSize: '14px' }}>{description}</p>
         </div>
     );
 
     const renderTaskWorkspaceView = (view: ViewKey): React.ReactElement => {
-        if (isLoading) {
-            return renderLoadingState('Loading tasks...');
-        }
+        if (isLoading) return renderLoadingState('Loading tasks...');
 
         switch (view) {
             case 'board':
-                return (
-                    <BoardView
-                        tasks={taskItems}
-                        statuses={TASK_STATUSES}
-                        type="task"
-                        onTaskClick={handleTaskClick}
-                        onNewTask={handleNewTask}
-                    />
-                );
+                return <BoardView tasks={taskItems} statuses={TASK_STATUSES} type="task" onTaskClick={handleTaskClick} onNewTask={handleNewTask} />;
             case 'table':
-                return (
-                    <TableView
-                        tasks={taskItems}
-                        statuses={TASK_STATUSES}
-                        updateTask={handleUpdateTask}
-                        deleteTask={handleDeleteTask}
-                        canAssign={canAssign}
-                    />
-                );
+                return <TableView tasks={taskItems} statuses={TASK_STATUSES} updateTask={handleUpdateTask} deleteTask={handleDeleteTask} canAssign={canAssign} />;
             case 'calendar':
-                return (
-                    <CalendarView
-                        tasks={taskItems}
-                        onTaskClick={(id) => {
-                            const task = taskItems.find((item) => item.id === id);
-                            if (task) handleTaskClick(task);
-                        }}
-                    />
-                );
+                return <CalendarView tasks={taskItems} onTaskClick={(id) => { const task = taskItems.find((item) => item.id === id); if (task) handleTaskClick(task); }} />;
             case 'gantt':
-                return (
-                    <GanttView
-                        tasks={taskItems}
-                        statuses={TASK_STATUSES}
-                        onTaskClick={(id) => {
-                            const task = taskItems.find((item) => item.id === id);
-                            if (task) handleTaskClick(task);
-                        }}
-                    />
-                );
+                return <GanttView tasks={taskItems} statuses={TASK_STATUSES} onTaskClick={(id) => { const task = taskItems.find((item) => item.id === id); if (task) handleTaskClick(task); }} />;
             case 'chart':
                 return <ChartView tasks={taskItems} statuses={TASK_STATUSES} />;
             default:
@@ -799,28 +664,11 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const renderTasksView = (): React.ReactElement => (
         <div style={{ display: 'grid', gap: '16px' }}>
             {renderWorkspaceHeader('Tasks', 'Operational planning, delivery tracking, and cross-team execution.')}
-
-            <div
-                style={{
-                    backgroundColor: THEME.colors.panel,
-                    border: `1px solid ${THEME.colors.border}`,
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                }}
-            >
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: '4px',
-                        padding: '12px 16px 0 16px',
-                        backgroundColor: THEME.colors.panel,
-                        borderBottom: `1px solid ${THEME.colors.border}`,
-                    }}
-                >
+            <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', gap: '4px', padding: '12px 16px 0 16px', backgroundColor: THEME.colors.panel, borderBottom: `1px solid ${THEME.colors.border}` }}>
                     {VIEW_TABS.map((tab) => {
                         const isActive = activeView === tab.key;
                         const isHovered = hoveredTab === tab.key;
-
                         return (
                             <button
                                 key={tab.key}
@@ -829,15 +677,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                                 onMouseEnter={() => setHoveredTab(tab.key)}
                                 onMouseLeave={() => setHoveredTab(null)}
                                 style={{
-                                    backgroundColor: isActive
-                                        ? THEME.colors.primary
-                                        : isHovered
-                                            ? THEME.colors.primarySoft
-                                            : 'transparent',
+                                    backgroundColor: isActive ? THEME.colors.primary : isHovered ? THEME.colors.primarySoft : 'transparent',
                                     color: isActive ? '#ffffff' : THEME.colors.textPrimary,
-                                    border: isActive
-                                        ? `1px solid ${THEME.colors.primary}`
-                                        : '1px solid transparent',
+                                    border: isActive ? `1px solid ${THEME.colors.primary}` : '1px solid transparent',
                                     borderRadius: '8px',
                                     padding: '8px 14px',
                                     cursor: 'pointer',
@@ -851,14 +693,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                         );
                     })}
                 </div>
-
-                <div
-                    style={{
-                        transition: 'opacity 180ms ease, transform 180ms ease',
-                        opacity: isViewVisible ? 1 : 0,
-                        transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
-                    }}
-                >
+                <div style={{ transition: 'opacity 180ms ease, transform 180ms ease', opacity: isViewVisible ? 1 : 0, transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)' }}>
                     {renderTaskWorkspaceView(displayedView)}
                 </div>
             </div>
@@ -871,55 +706,25 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         const criticalIncidentCount = incidentItems.filter((item) => item.severity === 'P1').length;
         const assignedCount = taskItems.filter((item) => Boolean(item.assignedTo)).length;
 
-        if (isLoading) {
-            return renderLoadingState('Loading dashboard...');
-        }
+        if (isLoading) return renderLoadingState('Loading dashboard...');
 
         return (
             <div style={{ display: 'grid', gap: '16px' }}>
                 {renderWorkspaceHeader('Dashboard', 'Portfolio snapshot across active tasks and operational incidents.')}
-
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: '16px',
-                    }}
-                >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                     {[
                         { label: 'Open Tasks', value: openTaskCount.toString() },
                         { label: 'Assigned Tasks', value: assignedCount.toString() },
                         { label: 'Open Incidents', value: openIncidentCount.toString() },
                         { label: 'P1 Incidents', value: criticalIncidentCount.toString() },
                     ].map((card) => (
-                        <div
-                            key={card.label}
-                            style={{
-                                backgroundColor: THEME.colors.panel,
-                                border: `1px solid ${THEME.colors.border}`,
-                                borderRadius: '16px',
-                                padding: '18px 20px',
-                                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
-                            }}
-                        >
-                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                {card.label}
-                            </div>
-                            <div style={{ marginTop: '10px', fontSize: '30px', fontWeight: 700, color: THEME.colors.textStrong }}>
-                                {card.value}
-                            </div>
+                        <div key={card.label} style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
+                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{card.label}</div>
+                            <div style={{ marginTop: '10px', fontSize: '30px', fontWeight: 700, color: THEME.colors.textStrong }}>{card.value}</div>
                         </div>
                     ))}
                 </div>
-
-                <div
-                    style={{
-                        backgroundColor: THEME.colors.panel,
-                        border: `1px solid ${THEME.colors.border}`,
-                        borderRadius: '16px',
-                        overflow: 'hidden',
-                    }}
-                >
+                <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
                     <ChartView tasks={taskItems} statuses={TASK_STATUSES} />
                 </div>
             </div>
@@ -927,28 +732,12 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     };
 
     const renderIncidentsView = (): React.ReactElement => {
-        if (isLoading) {
-            return renderLoadingState('Loading incidents...');
-        }
-
+        if (isLoading) return renderLoadingState('Loading incidents...');
         return (
             <div style={{ display: 'grid', gap: '16px' }}>
                 {renderWorkspaceHeader('Incidents', 'Track operational disruptions with severity, ownership, and impact context.')}
-                <div
-                    style={{
-                        backgroundColor: THEME.colors.panel,
-                        border: `1px solid ${THEME.colors.border}`,
-                        borderRadius: '16px',
-                        overflow: 'hidden',
-                    }}
-                >
-                    <BoardView
-                        tasks={incidentItems}
-                        statuses={INCIDENT_STATUSES}
-                        type="incident"
-                        onTaskClick={handleTaskClick}
-                        onNewTask={handleNewTask}
-                    />
+                <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
+                    <BoardView tasks={incidentItems} statuses={INCIDENT_STATUSES} type="incident" onTaskClick={handleTaskClick} onNewTask={handleNewTask} />
                 </div>
             </div>
         );
@@ -956,25 +745,18 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const renderReportsView = (): React.ReactElement => (
         <div style={{ display: 'grid', gap: '16px' }}>
-            {renderWorkspaceHeader(
-                'Reports',
-                'Embedded Power BI reports for operational analytics and performance tracking.'
-            )}
+            {renderWorkspaceHeader('Reports', 'Embedded Power BI reports for operational analytics and performance tracking.')}
             <ReportsView reports={POWER_BI_REPORTS} />
         </div>
     );
 
     const renderSelectedView = (): React.ReactElement => {
         switch (selectedView) {
-            case 'dashboard':
-                return renderDashboardView();
-            case 'incidents':
-                return renderIncidentsView();
-            case 'reports':
-                return renderReportsView();
+            case 'dashboard': return renderDashboardView();
+            case 'incidents': return renderIncidentsView();
+            case 'reports': return renderReportsView();
             case 'tasks':
-            default:
-                return renderTasksView();
+            default: return renderTasksView();
         }
     };
 
@@ -983,11 +765,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             <AppLayout selectedView={selectedView} onSelectView={setSelectedView}>
                 {renderSelectedView()}
             </AppLayout>
-
             <WorkItemModal
                 task={modalTask}
                 canAssign={canAssign}
-                siteUrl={context.pageContext.web.absoluteUrl}
+                siteUrl={DATA_SITE}
                 context={context}
                 currentUserName={currentUserName}
                 currentUserSpId={currentUserSpId}

@@ -1,15 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSP = exports.initializePnP = void 0;
-var sp_1 = require("@pnp/sp");
-var spfx_1 = require("@pnp/sp/behaviors/spfx");
-var spInstance = (0, sp_1.spfi)();
-var initializePnP = function (context) {
-    spInstance = (0, sp_1.spfi)().using((0, spfx_1.SPFx)(context));
-};
-exports.initializePnP = initializePnP;
-var getSP = function () {
-    return spInstance;
-};
-exports.getSP = getSP;
+exports.DATA_SITE = exports.getSP = exports.initSP = void 0;
+// Re-export the centralized SP service for backward compatibility.
+var spService_1 = require("./services/spService");
+Object.defineProperty(exports, "initSP", { enumerable: true, get: function () { return spService_1.initSP; } });
+Object.defineProperty(exports, "getSP", { enumerable: true, get: function () { return spService_1.getSP; } });
+Object.defineProperty(exports, "DATA_SITE", { enumerable: true, get: function () { return spService_1.DATA_SITE; } });
 //# sourceMappingURL=pnpjsConfig.js.map

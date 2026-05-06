@@ -1,9 +1,8 @@
-import { WebPartContext } from '@microsoft/sp-webpart-base';
-import { spfi, SPFI } from '@pnp/sp';
-import { SPFx } from '@pnp/sp/presets/all';
-import '@pnp/sp/webs';
-import '@pnp/sp/lists';
-import '@pnp/sp/items';
+// src/webparts/taskBoard/services/SharePointService.ts
+import { getSP } from "../../../pnpjsConfig";
+import "@pnp/sp/webs";
+import "@pnp/sp/lists";
+import "@pnp/sp/items";
 
 export interface TaskItem {
     Id: number;
@@ -11,17 +10,17 @@ export interface TaskItem {
     Status?: string;
     Priority?: string;
     DueDate?: string;
-    StartDate?: string;  // ADDED: Start date field
+    StartDate?: string;
     Description?: string;
-    RequestType?: string;  // ADDED: Request type field
-    Department?: string;   // ADDED: Department field
-    Created?: string;      // ADDED: Created date
+    RequestType?: string;
+    Department?: string;
+    Created?: string;
     AssignedTo?: {
         Id: number;
         Title: string;
         EMail?: string;
     };
-    AssignedToId?: number;  // ADDED: Separate ID field for updates
+    AssignedToId?: number;
     Author?: {
         Id: number;
         Title: string;
@@ -37,18 +36,13 @@ export interface IncidentTypeItem {
 }
 
 export class SharePointService {
-    private sp: SPFI;
-
-    public constructor(context: WebPartContext) {
-        this.sp = spfi().using(SPFx(context));
-    }
-
     /**
      * Get all tasks from SharePoint
      */
     public async getTasks(): Promise<TaskItem[]> {
+        const sp = getSP();
         try {
-            const items = await this.sp.web.lists
+            const items = await sp.web.lists
                 .getByTitle("Task Management System")
                 .items
                 .select(
@@ -75,9 +69,10 @@ export class SharePointService {
      * Get active incident types from SharePoint
      */
     public async getIncidentTypes(department: string): Promise<IncidentTypeItem[]> {
+        const sp = getSP();
         try {
             const sanitizedDepartment = department.replace(/'/g, "''");
-            const items = await this.sp.web.lists
+            const items = await sp.web.lists
                 .getByTitle("IncidentTypes")
                 .items
                 .select('Id', 'Title', 'Severity', 'Department', 'IsActive')
@@ -96,6 +91,7 @@ export class SharePointService {
      * Create a new task in SharePoint
      */
     public async createTask(task: any): Promise<{ id: number }> {
+        const sp = getSP();
         try {
             console.log('SharePointService.createTask - payload:', task);
 
@@ -108,12 +104,11 @@ export class SharePointService {
                 Description: task.description || ''
             };
 
-            // Only add these fields if they have values
-            if (task.assignedTo) addData.AssignedToId = task.assignedToId;
+            if (task.assignedToId != null) addData.AssignedToId = task.assignedToId;
             if (task.startDate) addData.StartDate = task.startDate;
             if (task.dueDate) addData.DueDate = task.dueDate;
 
-            const result = await this.sp.web.lists
+            const result = await sp.web.lists
                 .getByTitle("Task Management System")
                 .items
                 .add(addData);
@@ -130,10 +125,10 @@ export class SharePointService {
      * Update an existing task in SharePoint
      */
     public async updateTask(id: number, task: any): Promise<void> {
+        const sp = getSP();
         try {
             const updateData: any = {};
 
-            // Map all fields that need to be updated
             if (task.title !== undefined) updateData.Title = task.title;
             if (task.status !== undefined) updateData.Status = task.status;
             if (task.priority !== undefined) updateData.Priority = task.priority;
@@ -143,14 +138,13 @@ export class SharePointService {
             if (task.startDate !== undefined) updateData.StartDate = task.startDate;
             if (task.dueDate !== undefined) updateData.DueDate = task.dueDate;
 
-            // Handle assigned user
             if (task.assignedToId !== undefined) {
                 updateData.AssignedToId = task.assignedToId;
             }
 
             console.log('SharePointService.updateTask - id:', id, 'updateData:', updateData);
 
-            await this.sp.web.lists
+            await sp.web.lists
                 .getByTitle("Task Management System")
                 .items
                 .getById(id)
@@ -165,8 +159,9 @@ export class SharePointService {
      * Update only task status (for drag-and-drop)
      */
     public async updateTaskStatus(id: number, status: string): Promise<void> {
+        const sp = getSP();
         try {
-            await this.sp.web.lists
+            await sp.web.lists
                 .getByTitle("Task Management System")
                 .items
                 .getById(id)
@@ -181,9 +176,10 @@ export class SharePointService {
      * Delete a task from SharePoint
      */
     public async deleteTask(id: number): Promise<void> {
+        const sp = getSP();
         try {
             console.log('SharePointService.deleteTask - id:', id);
-            await this.sp.web.lists
+            await sp.web.lists
                 .getByTitle("Task Management System")
                 .items
                 .getById(id)
