@@ -63,9 +63,9 @@ var mergeUniqueUsers = function (users) {
     });
     return Array.from(merged.values());
 };
-// Source 1 — Graph
+// Source 1 — Microsoft Graph
 var searchGraphUsers = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var context, ctx, client, encodedQuery, url, response, payload, users, _a;
+    var context, client, encodedQuery, url, response, payload, users, _a;
     var _b;
     return tslib_1.__generator(this, function (_c) {
         switch (_c.label) {
@@ -73,13 +73,14 @@ var searchGraphUsers = function (query) { return tslib_1.__awaiter(void 0, void 
                 if (graphSearchDisabled)
                     return [2 /*return*/, []];
                 context = getSpfxContext();
-                if (!context || !context.aadHttpClientFactory)
+                // ✅ FIX: confirm context AND its required property exist
+                if (!context || typeof context.aadHttpClientFactory === 'undefined') {
                     return [2 /*return*/, []];
-                ctx = context;
+                }
                 _c.label = 1;
             case 1:
                 _c.trys.push([1, 5, , 6]);
-                return [4 /*yield*/, ctx.aadHttpClientFactory.getClient('https://graph.microsoft.com')];
+                return [4 /*yield*/, context.aadHttpClientFactory.getClient('https://graph.microsoft.com')];
             case 2:
                 client = _c.sent();
                 encodedQuery = encodeURIComponent(query);
@@ -100,7 +101,7 @@ var searchGraphUsers = function (query) { return tslib_1.__awaiter(void 0, void 
                         .filter(function (u) { return u.displayName || u.mail || u.userPrincipalName; })
                         .map(function (u) { return ({
                         id: null,
-                        name: (u.displayName || u.mail || u.userPrincipalName).trim(),
+                        name: (u.displayName || u.mail || u.userPrincipalName || '').trim(),
                         email: (u.mail || u.userPrincipalName || '').trim(),
                         loginName: "i:0#.f|membership|".concat(u.mail || u.userPrincipalName || ''),
                     }); })];
@@ -112,9 +113,9 @@ var searchGraphUsers = function (query) { return tslib_1.__awaiter(void 0, void 
         }
     });
 }); };
-// Source 2 — ClientPeoplePicker
+// Source 2 — SharePoint ClientPeoplePicker
 var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var context, webUrl, ctx, endpoint, queryParams, payloadCandidates, parsed, sawBadRequest, _i, payloadCandidates_1, requestBody, response, payload, rawResults, _a;
+    var context, webUrl, endpoint, queryParams, payloadCandidates, parsed, sawBadRequest, _i, payloadCandidates_1, requestBody, response, payload, rawResults, _a;
     var _b, _c, _d;
     return tslib_1.__generator(this, function (_e) {
         switch (_e.label) {
@@ -123,9 +124,9 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                     return [2 /*return*/, []];
                 context = getSpfxContext();
                 webUrl = getWebUrlForPicker(siteUrl);
+                // ✅ FIX: check spHttpClient is available
                 if (!context || !context.spHttpClient || !webUrl)
                     return [2 /*return*/, []];
-                ctx = context;
                 endpoint = "".concat(webUrl, "/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser");
                 queryParams = {
                     __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
@@ -149,7 +150,7 @@ var searchDirectoryUsers = function (query, siteUrl) { return tslib_1.__awaiter(
                 _e.label = 2;
             case 2:
                 _e.trys.push([2, 5, , 6]);
-                return [4 /*yield*/, ctx.spHttpClient.post(endpoint, sp_http_1.SPHttpClient.configurations.v1, {
+                return [4 /*yield*/, context.spHttpClient.post(endpoint, sp_http_1.SPHttpClient.configurations.v1, {
                         headers: { accept: 'application/json;odata=nometadata', 'content-type': 'application/json;odata=verbose', 'odata-version': '' },
                         body: JSON.stringify(requestBody),
                     })];
@@ -241,7 +242,7 @@ var searchSiteUsers = function (query) { return tslib_1.__awaiter(void 0, void 0
 }); };
 // Source 4 — REST site users
 var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-    var context, webUrl, ctx, response, payload, users, normalizedQuery_1, _a;
+    var context, webUrl, response, payload, users, normalizedQuery_1, _a;
     var _b, _c, _d;
     return tslib_1.__generator(this, function (_e) {
         switch (_e.label) {
@@ -250,13 +251,13 @@ var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaite
                     return [2 /*return*/, []];
                 context = getSpfxContext();
                 webUrl = getWebUrlForPicker(siteUrl);
+                // ✅ FIX: check spHttpClient is available
                 if (!context || !context.spHttpClient || !webUrl)
                     return [2 /*return*/, []];
-                ctx = context;
                 _e.label = 1;
             case 1:
                 _e.trys.push([1, 4, , 5]);
-                return [4 /*yield*/, ctx.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, { headers: { accept: 'application/json;odata.metadata=none' } })];
+                return [4 /*yield*/, context.spHttpClient.get("".concat(webUrl, "/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500"), sp_http_1.SPHttpClient.configurations.v1, { headers: { accept: 'application/json;odata.metadata=none' } })];
             case 2:
                 response = _e.sent();
                 if (!response.ok) {
@@ -286,7 +287,7 @@ var searchSiteUsersViaRest = function (query, siteUrl) { return tslib_1.__awaite
         }
     });
 }); };
-// Source 5 — UserRoles
+// Source 5 — UserRoles list
 var searchUsersFromUserRoles = function (query) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, normalizedQuery, items, _a;
     return tslib_1.__generator(this, function (_b) {

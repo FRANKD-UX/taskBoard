@@ -108,14 +108,16 @@ const mergeUniqueUsers = (users: IResolvedUser[]): IResolvedUser[] => {
     return Array.from(merged.values());
 };
 
-// Source 1 — Graph
+// Source 1 — Microsoft Graph
 const searchGraphUsers = async (query: string): Promise<IResolvedUser[]> => {
     if (graphSearchDisabled) return [];
     const context = getSpfxContext();
-    if (!context || !context.aadHttpClientFactory) return [];
-    const ctx = context;
+    // ✅ FIX: confirm context AND its required property exist
+    if (!context || typeof context.aadHttpClientFactory === 'undefined') {
+        return [];
+    }
     try {
-        const client = await ctx.aadHttpClientFactory.getClient('https://graph.microsoft.com');
+        const client = await context.aadHttpClientFactory.getClient('https://graph.microsoft.com');
         const encodedQuery = encodeURIComponent(query);
         const url = `https://graph.microsoft.com/v1.0/users?$search="displayName:${encodedQuery}" OR "mail:${encodedQuery}" OR "userPrincipalName:${encodedQuery}"&$select=id,displayName,mail,userPrincipalName&$top=10`;
         const response = await client.get(url, AadHttpClient.configurations.v1, { headers: { ConsistencyLevel: 'eventual' } });
@@ -129,7 +131,7 @@ const searchGraphUsers = async (query: string): Promise<IResolvedUser[]> => {
             .filter(u => u.displayName || u.mail || u.userPrincipalName)
             .map(u => ({
                 id: null,
-                name: (u.displayName || u.mail || u.userPrincipalName).trim(),
+                name: (u.displayName || u.mail || u.userPrincipalName || '').trim(),
                 email: (u.mail || u.userPrincipalName || '').trim(),
                 loginName: `i:0#.f|membership|${u.mail || u.userPrincipalName || ''}`,
             }));
@@ -139,13 +141,13 @@ const searchGraphUsers = async (query: string): Promise<IResolvedUser[]> => {
     }
 };
 
-// Source 2 — ClientPeoplePicker
+// Source 2 — SharePoint ClientPeoplePicker
 const searchDirectoryUsers = async (query: string, siteUrl?: string): Promise<IResolvedUser[]> => {
     if (directoryEndpointDisabled) return [];
     const context = getSpfxContext();
     const webUrl = getWebUrlForPicker(siteUrl);
+    // ✅ FIX: check spHttpClient is available
     if (!context || !context.spHttpClient || !webUrl) return [];
-    const ctx = context;
     const endpoint = `${webUrl}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser`;
     const queryParams = {
         __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
@@ -163,7 +165,7 @@ const searchDirectoryUsers = async (query: string, siteUrl?: string): Promise<IR
     let sawBadRequest = false;
     for (const requestBody of payloadCandidates) {
         try {
-            const response = await ctx.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
+            const response = await context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
                 headers: { accept: 'application/json;odata=nometadata', 'content-type': 'application/json;odata=verbose', 'odata-version': '' },
                 body: JSON.stringify(requestBody),
             });
@@ -222,10 +224,10 @@ const searchSiteUsersViaRest = async (query: string, siteUrl?: string): Promise<
     if (restSiteUsersDisabled) return [];
     const context = getSpfxContext();
     const webUrl = getWebUrlForPicker(siteUrl);
+    // ✅ FIX: check spHttpClient is available
     if (!context || !context.spHttpClient || !webUrl) return [];
-    const ctx = context;
     try {
-        const response = await ctx.spHttpClient.get(
+        const response = await context.spHttpClient.get(
             `${webUrl}/_api/web/siteusers?$select=Id,Title,LoginName,Email&$top=500`,
             SPHttpClient.configurations.v1,
             { headers: { accept: 'application/json;odata.metadata=none' } }
@@ -252,7 +254,7 @@ const searchSiteUsersViaRest = async (query: string, siteUrl?: string): Promise<
     }
 };
 
-// Source 5 — UserRoles
+// Source 5 — UserRoles list
 const searchUsersFromUserRoles = async (query: string): Promise<IResolvedUser[]> => {
     const sp = getSP();
     const normalizedQuery = query.trim().toLowerCase();
