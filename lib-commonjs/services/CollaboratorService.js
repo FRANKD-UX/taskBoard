@@ -301,6 +301,46 @@ var CollaboratorService = /** @class */ (function () {
         });
     };
     // ---------------------------------------------------------------------------
+    // NEW METHOD: get task IDs where a user is an accepted collaborator
+    // ---------------------------------------------------------------------------
+    CollaboratorService.prototype.getAcceptedTaskIdsForUser = function (collaboratorId) {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var sp, items, error_3;
+            return tslib_1.__generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        sp = (0, pnpjsConfig_1.getSP)();
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(LIST_TITLE)
+                                .items
+                                .select('TaskId', 'Collaborator/Id')
+                                .expand('Collaborator')
+                                .filter("Status eq 'Accepted'")
+                                .top(1000)()];
+                    case 2:
+                        items = _a.sent();
+                        return [2 /*return*/, items
+                                .filter(function (item) {
+                                var collab = item.Collaborator;
+                                if (!collab)
+                                    return false;
+                                var collabArray = Array.isArray(collab) ? collab : [collab];
+                                return collabArray.some(function (c) { return c.Id === collaboratorId; });
+                            })
+                                .map(function (item) { return Number(item.TaskId); })];
+                    case 3:
+                        error_3 = _a.sent();
+                        console.error('getAcceptedTaskIdsForUser failed', error_3);
+                        return [2 /*return*/, []];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    // ---------------------------------------------------------------------------
     // Private — field name and type discovery
     // ---------------------------------------------------------------------------
     CollaboratorService.prototype.getFieldNames = function () {
@@ -311,7 +351,7 @@ var CollaboratorService = /** @class */ (function () {
     };
     CollaboratorService.prototype.resolveFieldNames = function () {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, fields, error_3, resolve, result;
+            var sp, fields, error_4, resolve, result;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -329,8 +369,8 @@ var CollaboratorService = /** @class */ (function () {
                         fields = _a.sent();
                         return [3 /*break*/, 4];
                     case 3:
-                        error_3 = _a.sent();
-                        console.warn('CollaboratorService: could not load field schema, using default field names', error_3);
+                        error_4 = _a.sent();
+                        console.warn('CollaboratorService: could not load field schema, using default field names', error_4);
                         return [3 /*break*/, 4];
                     case 4:
                         resolve = function (candidates, fallbackInternalName, fallbackIsMulti) {

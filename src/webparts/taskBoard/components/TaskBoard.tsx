@@ -29,6 +29,7 @@ import { initSP, getSP, DATA_SITE } from '../../../pnpjsConfig';
 import { TaskService } from '../../../services/TaskService';
 import { NotificationService } from '../../../services/NotificationService';
 import { getUserRole } from '../../../services/UserRoleService';
+import { CollaboratorService } from '../../../services/CollaboratorService';   // <-- ADDED
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
@@ -45,7 +46,6 @@ const VIEW_TABS: Array<{ key: ViewKey; label: string }> = [
     { key: 'chart', label: 'Chart' },
 ];
 
-// Power BI report configuration (unchanged)
 const POWER_BI_REPORTS: IPowerBiReport[] = [
     {
         id: 'operations-overview',
@@ -173,9 +173,7 @@ const resolveUserNameFromId = async (userId: number): Promise<string | null> => 
             if (userInfo && userInfo.length > 0) {
                 return userInfo[0].Title;
             }
-        } catch {
-            // ignore
-        }
+        } catch { }
         return null;
     }
 };
@@ -209,6 +207,18 @@ const resolveSharePointUserId = async (
     return null;
 };
 
+// ---------- helper to fetch collaboration task IDs for a user ----------
+const fetchCollaborationTaskIds = async (userId: number): Promise<Set<string>> => {
+    const collabService = new CollaboratorService();
+    try {
+        const ids = await collabService.getAcceptedTaskIdsForUser(userId);
+        return new Set(ids.map(String));
+    } catch {
+        return new Set<string>();
+    }
+};
+// ------------------------------------------------------------------------
+
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
     const [workItems, setWorkItems] = useState<Task[]>([]);
     const [modalTask, setModalTask] = useState<Task | null>(null);
@@ -230,7 +240,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     useEffect(() => {
         (window as any).spfxContext = context;
-        initSP(context);   // <-- INITIALIZE ONCE HERE
+        initSP(context);
     }, [context]);
 
     const mapServiceItemToTask = React.useCallback(async (item: any, createdByFallback: string): Promise<Task> => {
@@ -281,6 +291,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             department: item.department || 'IT',
             description: item.description,
             createdBy: item.createdBy || createdByFallback,
+            authorId: item.authorId ?? null,           // <-- ADDED
             severity: item.severity,
             impact: item.impact,
             affectedService: item.affectedService,
@@ -295,20 +306,38 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
     }, []);
 
+    // Filter tasks based on visibility rules
+    const filterVisibleTasks = async (allTasks: Task[], userId: number): Promise<Task[]> => {
+        const collaborationTaskIds = await fetchCollaborationTaskIds(userId);
+        return allTasks.filter(task => {
+            if (task.authorId === userId) return true;
+            if (task.assignedToId === userId) return true;
+            if (collaborationTaskIds.has(task.id)) return true;
+            return false;
+        });
+    };
+
     const loadAndMapTasks = async (): Promise<void> => {
         if (!taskService) return;
         try {
             const sp = getSP();
             const user = await sp.web.currentUser();
+            const userId = (user as any).Id;
             setCurrentUserName(user.Title || '');
             setCurrentUserEmail(user.Email || '');
-            setCurrentUserSpId((user as any).Id ?? null);
+            setCurrentUserSpId(userId ?? null);
 
             const items = await taskService.getTasks();
             const mappedTasks = await Promise.all(
                 items.map((item: any) => mapServiceItemToTask(item, user.Title || ''))
             );
-            setWorkItems(mappedTasks);
+
+            if (userId) {
+                const visibleTasks = await filterVisibleTasks(mappedTasks, userId);
+                setWorkItems(visibleTasks);
+            } else {
+                setWorkItems(mappedTasks);   // fallback if no userId
+            }
         } catch (error) {
             console.error('TaskBoard: load failed', error);
         }
@@ -347,7 +376,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     }, [context]);
 
     useEffect(() => {
-        if (isLoading || !currentUserName) return;
+        if (isLoading || !currentUserSpId) return;
         const interval = setInterval(async () => {
             try {
                 await taskService.checkAndEscalateSLAs();
@@ -355,13 +384,17 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 const mapped = await Promise.all(
                     items.map((item: any) => mapServiceItemToTask(item, currentUserName))
                 );
-                setWorkItems(mapped);
+                const visibleTasks = await filterVisibleTasks(mapped, currentUserSpId);
+                setWorkItems(visibleTasks);
             } catch (error) {
                 console.error('Periodic refresh failed', error);
             }
         }, 60000);
         return () => clearInterval(interval);
-    }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask]);
+
+    // ... rest of the component (handleDragEnd, handleTaskClick, etc.) remains identical to the version you provided.
+    // I'll include the rest unchanged for completeness.
 
     useEffect(() => {
         if (activeView === displayedView) return;

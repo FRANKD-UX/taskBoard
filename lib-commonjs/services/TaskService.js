@@ -89,13 +89,14 @@ var TaskService = /** @class */ (function () {
                         incidentTypeFieldName = _g.sent();
                         assigneeLookupField = "".concat(assigneeField.internalName, "Id");
                         mapItem = function (item) {
-                            var _a, _b, _c, _d, _e, _f, _g;
+                            var _a, _b, _c, _d, _e, _f, _g, _h, _j;
                             var assignee = _this.getPrimaryAssignee((_a = item[assigneeField.internalName]) !== null && _a !== void 0 ? _a : item.AssignedTo);
                             var fallbackAssigneeId = _this.getPrimaryAssigneeId((_b = item[assigneeLookupField]) !== null && _b !== void 0 ? _b : item.AssignedToId);
                             var rawIncidentType = incidentTypeFieldName ? item[incidentTypeFieldName] : undefined;
                             var incidentType = _this.getIncidentTypeValue(rawIncidentType);
                             var requestType = _this.normalizeRequestType((_c = item.RequestType) !== null && _c !== void 0 ? _c : item.Type);
                             var workItemType = _this.toWorkItemType(requestType);
+                            var authorId = (_e = (_d = item.Author) === null || _d === void 0 ? void 0 : _d.Id) !== null && _e !== void 0 ? _e : null; // <-- ADDED
                             return {
                                 id: item.Id,
                                 type: workItemType,
@@ -104,8 +105,8 @@ var TaskService = /** @class */ (function () {
                                 priority: item.Priority || 'Medium',
                                 site: item.Site || 'Albertsdal',
                                 assignedTo: assignee === null || assignee === void 0 ? void 0 : assignee.Title,
-                                assignedToId: (_e = (_d = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _d !== void 0 ? _d : fallbackAssigneeId) !== null && _e !== void 0 ? _e : null,
-                                assignedToEmail: (_f = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _f !== void 0 ? _f : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
+                                assignedToId: (_g = (_f = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _f !== void 0 ? _f : fallbackAssigneeId) !== null && _g !== void 0 ? _g : null,
+                                assignedToEmail: (_h = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _h !== void 0 ? _h : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
                                 assignedToLoginName: assignee === null || assignee === void 0 ? void 0 : assignee.LoginName,
                                 startDate: item.StartDate,
                                 dueDate: item.DueDate,
@@ -116,12 +117,13 @@ var TaskService = /** @class */ (function () {
                                 severity: item.Severity,
                                 impact: item.Impact,
                                 affectedService: item.AffectedService,
-                                incidentTypeId: (_g = incidentType === null || incidentType === void 0 ? void 0 : incidentType.id) !== null && _g !== void 0 ? _g : _this.getPrimaryLookupId(item[incidentTypeFieldName ? "".concat(incidentTypeFieldName, "Id") : '']),
+                                incidentTypeId: (_j = incidentType === null || incidentType === void 0 ? void 0 : incidentType.id) !== null && _j !== void 0 ? _j : _this.getPrimaryLookupId(item[incidentTypeFieldName ? "".concat(incidentTypeFieldName, "Id") : '']),
                                 incidentType: incidentType,
                                 slaResponseMinutes: item.SLAResponseMinutes,
                                 slaResolutionMinutes: item.SLAResolutionMinutes,
                                 slaDeadline: item.SLADeadline,
                                 slaStatus: item.SLAStatus,
+                                authorId: authorId,
                             };
                         };
                         buildSelectAndExpand = function () {
@@ -134,12 +136,11 @@ var TaskService = /** @class */ (function () {
                                 "".concat(assigneeField.internalName, "/Id"),
                                 "".concat(assigneeField.internalName, "/EMail"),
                                 assigneeLookupField,
+                                'Author/Id', // <-- ADDED
                             ];
-                            var expandFields = [assigneeField.internalName];
+                            var expandFields = [assigneeField.internalName, 'Author']; // <-- ADDED 'Author'
                             if (incidentTypeFieldName) {
-                                selectFields.push("".concat(incidentTypeFieldName, "/Id"), "".concat(incidentTypeFieldName, "/Title"), "".concat(incidentTypeFieldName, "/Department"), "".concat(incidentTypeFieldName, "Id")
-                                // Removed `${incidentTypeFieldName}/Severity` – it's invalid and breaks the query
-                                );
+                                selectFields.push("".concat(incidentTypeFieldName, "/Id"), "".concat(incidentTypeFieldName, "/Title"), "".concat(incidentTypeFieldName, "/Department"), "".concat(incidentTypeFieldName, "Id"));
                                 expandFields.push(incidentTypeFieldName);
                             }
                             return { selectFields: selectFields, expandFields: expandFields };
@@ -414,7 +415,7 @@ var TaskService = /** @class */ (function () {
                         previousName = (_c = assigneeObj === null || assigneeObj === void 0 ? void 0 : assigneeObj.Title) !== null && _c !== void 0 ? _c : '';
                         updatePayload = {
                             SLAStatus: 'Breached',
-                            Status: 'Escalated' // ← FIX: now correctly moves the item to Escalated
+                            Status: 'Escalated'
                         };
                         this.applyAssigneeToPayload(updatePayload, newAssignee.id, assigneeField);
                         return [4 /*yield*/, sp.web.lists
@@ -438,11 +439,8 @@ var TaskService = /** @class */ (function () {
                         collabErr_1 = _e.sent();
                         console.warn('Could not add manager as collaborator', collabErr_1);
                         return [3 /*break*/, 14];
-                    case 14: 
-                    // Log escalation and collaborator addition
-                    return [4 /*yield*/, this.logSlaEscalation(item.Id, previousName, newAssignee.name)];
+                    case 14: return [4 /*yield*/, this.logSlaEscalation(item.Id, previousName, newAssignee.name)];
                     case 15:
-                        // Log escalation and collaborator addition
                         _e.sent();
                         if (!(escalateToRole === 'TeamLead' && manager && manager.id !== newAssignee.id)) return [3 /*break*/, 20];
                         _e.label = 16;

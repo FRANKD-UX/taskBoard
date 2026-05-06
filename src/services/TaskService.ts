@@ -102,6 +102,7 @@ export class TaskService {
             const incidentType = this.getIncidentTypeValue(rawIncidentType);
             const requestType = this.normalizeRequestType(item.RequestType ?? item.Type);
             const workItemType = this.toWorkItemType(requestType);
+            const authorId = item.Author?.Id ?? null;   // <-- ADDED
 
             return {
                 id: item.Id,
@@ -129,12 +130,11 @@ export class TaskService {
                 slaResolutionMinutes: item.SLAResolutionMinutes,
                 slaDeadline: item.SLADeadline,
                 slaStatus: item.SLAStatus,
+                authorId,                              // <-- ADDED
             };
         };
 
         // Build select/expand fields.
-        // FIX: Do NOT select IncidentType/Severity – it causes a 400 Bad Request.
-        // The severity is already available via the incident type object's other properties.
         const buildSelectAndExpand = (): { selectFields: string[]; expandFields: string[] } => {
             const selectFields: string[] = [
                 'Id', 'Title', 'Status', 'Priority', 'Site', 'StartDate', 'DueDate',
@@ -145,8 +145,9 @@ export class TaskService {
                 `${assigneeField.internalName}/Id`,
                 `${assigneeField.internalName}/EMail`,
                 assigneeLookupField,
+                'Author/Id',          // <-- ADDED
             ];
-            const expandFields: string[] = [assigneeField.internalName];
+            const expandFields: string[] = [assigneeField.internalName, 'Author']; // <-- ADDED 'Author'
 
             if (incidentTypeFieldName) {
                 selectFields.push(
@@ -154,7 +155,6 @@ export class TaskService {
                     `${incidentTypeFieldName}/Title`,
                     `${incidentTypeFieldName}/Department`,
                     `${incidentTypeFieldName}Id`
-                    // Removed `${incidentTypeFieldName}/Severity` – it's invalid and breaks the query
                 );
                 expandFields.push(incidentTypeFieldName);
             }
@@ -177,10 +177,9 @@ export class TaskService {
             console.warn('TaskService.getTasks: full typed query failed, trying minimal expanded query.', primaryError);
         }
 
-        // Attempt minimal expanded query (same corrected fields, minus Email to be safe)
+        // Attempt minimal expanded query
         try {
             const { selectFields, expandFields } = buildSelectAndExpand();
-            // Remove the EMail field from the select – just in case it’s the culprit after the fix.
             const minimalSelect = selectFields.filter(f => f !== `${assigneeField.internalName}/EMail`);
             const minimalItems = await sp.web.lists
                 .getByTitle(listTitle)
@@ -390,10 +389,9 @@ export class TaskService {
 
                 const previousName = assigneeObj?.Title ?? '';
 
-                // Build update payload: mark SLA as Breached, set Status to Escalated, and reassign.
                 const updatePayload: Record<string, any> = {
                     SLAStatus: 'Breached',
-                    Status: 'Escalated'  // ← FIX: now correctly moves the item to Escalated
+                    Status: 'Escalated'
                 };
                 this.applyAssigneeToPayload(updatePayload, newAssignee.id, assigneeField);
                 await sp.web.lists
@@ -413,7 +411,6 @@ export class TaskService {
                     }
                 }
 
-                // Log escalation and collaborator addition
                 await this.logSlaEscalation(item.Id, previousName, newAssignee.name);
                 if (escalateToRole === 'TeamLead' && manager && manager.id !== newAssignee.id) {
                     try {
@@ -427,7 +424,6 @@ export class TaskService {
                     }
                 }
 
-                // Send email notification
                 if (this.notificationService) {
                     try {
                         await this.notificationService.sendEscalationNotification({

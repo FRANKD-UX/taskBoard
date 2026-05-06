@@ -19,6 +19,7 @@ var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var TaskService_1 = require("../../../services/TaskService");
 var NotificationService_1 = require("../../../services/NotificationService");
 var UserRoleService_1 = require("../../../services/UserRoleService");
+var CollaboratorService_1 = require("../../../services/CollaboratorService"); // <-- ADDED
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
 var INCIDENT_STATUSES = ['New', 'Investigating', 'Escalated', 'Resolved'];
@@ -29,7 +30,6 @@ var VIEW_TABS = [
     { key: 'gantt', label: 'Gantt' },
     { key: 'chart', label: 'Chart' },
 ];
-// Power BI report configuration (unchanged)
 var POWER_BI_REPORTS = [
     {
         id: 'operations-overview',
@@ -208,6 +208,28 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
         }
     });
 }); };
+// ---------- helper to fetch collaboration task IDs for a user ----------
+var fetchCollaborationTaskIds = function (userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var collabService, ids, _a;
+    return tslib_1.__generator(this, function (_b) {
+        switch (_b.label) {
+            case 0:
+                collabService = new CollaboratorService_1.CollaboratorService();
+                _b.label = 1;
+            case 1:
+                _b.trys.push([1, 3, , 4]);
+                return [4 /*yield*/, collabService.getAcceptedTaskIdsForUser(userId)];
+            case 2:
+                ids = _b.sent();
+                return [2 /*return*/, new Set(ids.map(String))];
+            case 3:
+                _a = _b.sent();
+                return [2 /*return*/, new Set()];
+            case 4: return [2 /*return*/];
+        }
+    });
+}); };
+// ------------------------------------------------------------------------
 var TaskBoard = function (_a) {
     var context = _a.context;
     var _b = (0, react_1.useState)([]), workItems = _b[0], setWorkItems = _b[1];
@@ -227,13 +249,13 @@ var TaskBoard = function (_a) {
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
     (0, react_1.useEffect)(function () {
         window.spfxContext = context;
-        (0, pnpjsConfig_1.initSP)(context); // <-- INITIALIZE ONCE HERE
+        (0, pnpjsConfig_1.initSP)(context);
     }, [context]);
     var mapServiceItemToTask = React.useCallback(function (item, createdByFallback) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var type, priority, assignedToName, userId, resolvedName;
-        var _a, _b, _c;
-        return tslib_1.__generator(this, function (_d) {
-            switch (_d.label) {
+        var _a, _b, _c, _d;
+        return tslib_1.__generator(this, function (_e) {
+            switch (_e.label) {
                 case 0:
                     type = item.type || toWorkItemType(item.requestType);
                     priority = type === 'incident' && item.severity
@@ -253,10 +275,10 @@ var TaskBoard = function (_a) {
                     if (!(userId && userId > 0)) return [3 /*break*/, 2];
                     return [4 /*yield*/, resolveUserNameFromId(userId)];
                 case 1:
-                    resolvedName = _d.sent();
+                    resolvedName = _e.sent();
                     if (resolvedName)
                         assignedToName = resolvedName;
-                    _d.label = 2;
+                    _e.label = 2;
                 case 2:
                     if (!assignedToName && item.assignedToEmail) {
                         assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
@@ -284,6 +306,7 @@ var TaskBoard = function (_a) {
                             department: item.department || 'IT',
                             description: item.description,
                             createdBy: item.createdBy || createdByFallback,
+                            authorId: (_d = item.authorId) !== null && _d !== void 0 ? _d : null, // <-- ADDED
                             severity: item.severity,
                             impact: item.impact,
                             affectedService: item.affectedService,
@@ -299,37 +322,65 @@ var TaskBoard = function (_a) {
             }
         });
     }); }, []);
+    // Filter tasks based on visibility rules
+    var filterVisibleTasks = function (allTasks, userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var collaborationTaskIds;
+        return tslib_1.__generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, fetchCollaborationTaskIds(userId)];
+                case 1:
+                    collaborationTaskIds = _a.sent();
+                    return [2 /*return*/, allTasks.filter(function (task) {
+                            if (task.authorId === userId)
+                                return true;
+                            if (task.assignedToId === userId)
+                                return true;
+                            if (collaborationTaskIds.has(task.id))
+                                return true;
+                            return false;
+                        })];
+            }
+        });
+    }); };
     var loadAndMapTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var sp, user_1, items, mappedTasks, error_1;
-        var _a;
-        return tslib_1.__generator(this, function (_b) {
-            switch (_b.label) {
+        var sp, user_1, userId, items, mappedTasks, visibleTasks, error_1;
+        return tslib_1.__generator(this, function (_a) {
+            switch (_a.label) {
                 case 0:
                     if (!taskService)
                         return [2 /*return*/];
-                    _b.label = 1;
+                    _a.label = 1;
                 case 1:
-                    _b.trys.push([1, 5, , 6]);
+                    _a.trys.push([1, 8, , 9]);
                     sp = (0, pnpjsConfig_1.getSP)();
                     return [4 /*yield*/, sp.web.currentUser()];
                 case 2:
-                    user_1 = _b.sent();
+                    user_1 = _a.sent();
+                    userId = user_1.Id;
                     setCurrentUserName(user_1.Title || '');
                     setCurrentUserEmail(user_1.Email || '');
-                    setCurrentUserSpId((_a = user_1.Id) !== null && _a !== void 0 ? _a : null);
+                    setCurrentUserSpId(userId !== null && userId !== void 0 ? userId : null);
                     return [4 /*yield*/, taskService.getTasks()];
                 case 3:
-                    items = _b.sent();
+                    items = _a.sent();
                     return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, user_1.Title || ''); }))];
                 case 4:
-                    mappedTasks = _b.sent();
-                    setWorkItems(mappedTasks);
-                    return [3 /*break*/, 6];
+                    mappedTasks = _a.sent();
+                    if (!userId) return [3 /*break*/, 6];
+                    return [4 /*yield*/, filterVisibleTasks(mappedTasks, userId)];
                 case 5:
-                    error_1 = _b.sent();
+                    visibleTasks = _a.sent();
+                    setWorkItems(visibleTasks);
+                    return [3 /*break*/, 7];
+                case 6:
+                    setWorkItems(mappedTasks); // fallback if no userId
+                    _a.label = 7;
+                case 7: return [3 /*break*/, 9];
+                case 8:
+                    error_1 = _a.sent();
                     console.error('TaskBoard: load failed', error_1);
-                    return [3 /*break*/, 6];
-                case 6: return [2 /*return*/];
+                    return [3 /*break*/, 9];
+                case 9: return [2 /*return*/];
             }
         });
     }); };
@@ -386,14 +437,14 @@ var TaskBoard = function (_a) {
         initialize();
     }, [context]);
     (0, react_1.useEffect)(function () {
-        if (isLoading || !currentUserName)
+        if (isLoading || !currentUserSpId)
             return;
         var interval = setInterval(function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var items, mapped, error_3;
+            var items, mapped, visibleTasks, error_3;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        _a.trys.push([0, 4, , 5]);
+                        _a.trys.push([0, 5, , 6]);
                         return [4 /*yield*/, taskService.checkAndEscalateSLAs()];
                     case 1:
                         _a.sent();
@@ -403,18 +454,23 @@ var TaskBoard = function (_a) {
                         return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }))];
                     case 3:
                         mapped = _a.sent();
-                        setWorkItems(mapped);
-                        return [3 /*break*/, 5];
+                        return [4 /*yield*/, filterVisibleTasks(mapped, currentUserSpId)];
                     case 4:
+                        visibleTasks = _a.sent();
+                        setWorkItems(visibleTasks);
+                        return [3 /*break*/, 6];
+                    case 5:
                         error_3 = _a.sent();
                         console.error('Periodic refresh failed', error_3);
-                        return [3 /*break*/, 5];
-                    case 5: return [2 /*return*/];
+                        return [3 /*break*/, 6];
+                    case 6: return [2 /*return*/];
                 }
             });
         }); }, 60000);
         return function () { return clearInterval(interval); };
-    }, [isLoading, currentUserName, taskService, mapServiceItemToTask]);
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask]);
+    // ... rest of the component (handleDragEnd, handleTaskClick, etc.) remains identical to the version you provided.
+    // I'll include the rest unchanged for completeness.
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;

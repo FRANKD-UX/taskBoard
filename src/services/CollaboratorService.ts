@@ -321,6 +321,33 @@ export class CollaboratorService {
     }
 
     // ---------------------------------------------------------------------------
+    // NEW METHOD: get task IDs where a user is an accepted collaborator
+    // ---------------------------------------------------------------------------
+    public async getAcceptedTaskIdsForUser(collaboratorId: number): Promise<number[]> {
+        const sp = getSP();
+        try {
+            const items = await sp.web.lists
+                .getByTitle(LIST_TITLE)
+                .items
+                .select('TaskId', 'Collaborator/Id')
+                .expand('Collaborator')
+                .filter(`Status eq 'Accepted'`)
+                .top(1000)();
+            return items
+                .filter((item: any) => {
+                    const collab = item.Collaborator;
+                    if (!collab) return false;
+                    const collabArray = Array.isArray(collab) ? collab : [collab];
+                    return collabArray.some((c: any) => c.Id === collaboratorId);
+                })
+                .map((item: any) => Number(item.TaskId));
+        } catch (error) {
+            console.error('getAcceptedTaskIdsForUser failed', error);
+            return [];
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Private — field name and type discovery
     // ---------------------------------------------------------------------------
 
