@@ -29,7 +29,7 @@ import { initSP, getSP, DATA_SITE } from '../../../pnpjsConfig';
 import { TaskService } from '../../../services/TaskService';
 import { NotificationService } from '../../../services/NotificationService';
 import { getUserRole } from '../../../services/UserRoleService';
-import { CollaboratorService } from '../../../services/CollaboratorService';   // <-- ADDED
+import { CollaboratorService } from '../../../services/CollaboratorService';
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
@@ -233,6 +233,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const [currentUserSpId, setCurrentUserSpId] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
 
+    // Role and department for visibility check
+    const [currentUserRole, setCurrentUserRole] = useState<string>('');
+    const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
+
     const taskService = useMemo(() => new TaskService(), []);
 
     const taskItems = useMemo(() => workItems.filter((item) => item.type === 'task'), [workItems]);
@@ -291,7 +295,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             department: item.department || 'IT',
             description: item.description,
             createdBy: item.createdBy || createdByFallback,
-            authorId: item.authorId ?? null,           // <-- ADDED
+            authorId: item.authorId ?? null,
             severity: item.severity,
             impact: item.impact,
             affectedService: item.affectedService,
@@ -306,10 +310,24 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         };
     }, []);
 
-    // Filter tasks based on visibility rules
-    const filterVisibleTasks = async (allTasks: Task[], userId: number): Promise<Task[]> => {
+    // Visibility rules:
+    // - Manager / TeamLead: all incidents in their department
+    // - Everyone else: tasks/incidents only if creator, assignee, or accepted collaborator
+    const filterVisibleTasks = async (
+        allTasks: Task[],
+        userId: number,
+        role: string,
+        department: string
+    ): Promise<Task[]> => {
         const collaborationTaskIds = await fetchCollaborationTaskIds(userId);
+        const isManagerOrLead = role === 'Manager' || role === 'TeamLead';
+
         return allTasks.filter(task => {
+            // For incidents, managers/leads see all in their department
+            if (task.type === 'incident' && isManagerOrLead && task.department === department) {
+                return true;
+            }
+            // Standard rules for all other cases (tasks, or non‑manager incident access)
             if (task.authorId === userId) return true;
             if (task.assignedToId === userId) return true;
             if (collaborationTaskIds.has(task.id)) return true;
@@ -333,10 +351,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             );
 
             if (userId) {
-                const visibleTasks = await filterVisibleTasks(mappedTasks, userId);
+                const visibleTasks = await filterVisibleTasks(mappedTasks, userId, currentUserRole, currentUserDepartment);
                 setWorkItems(visibleTasks);
             } else {
-                setWorkItems(mappedTasks);   // fallback if no userId
+                setWorkItems(mappedTasks);
             }
         } catch (error) {
             console.error('TaskBoard: load failed', error);
@@ -356,8 +374,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 try {
                     const role = await getUserRole(user.Email || '');
                     setCanAssign(role?.canAssign === true);
+                    setCurrentUserRole(role?.role ?? '');
+                    setCurrentUserDepartment(role?.department ?? '');
                 } catch (roleError) {
-                    console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError);
+                    console.warn('TaskBoard: role lookup failed; continuing with read‑only assignment mode', roleError);
                     setCanAssign(false);
                 }
 
@@ -384,17 +404,14 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 const mapped = await Promise.all(
                     items.map((item: any) => mapServiceItemToTask(item, currentUserName))
                 );
-                const visibleTasks = await filterVisibleTasks(mapped, currentUserSpId);
+                const visibleTasks = await filterVisibleTasks(mapped, currentUserSpId, currentUserRole, currentUserDepartment);
                 setWorkItems(visibleTasks);
             } catch (error) {
                 console.error('Periodic refresh failed', error);
             }
         }, 60000);
         return () => clearInterval(interval);
-    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask]);
-
-    // ... rest of the component (handleDragEnd, handleTaskClick, etc.) remains identical to the version you provided.
-    // I'll include the rest unchanged for completeness.
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
 
     useEffect(() => {
         if (activeView === displayedView) return;

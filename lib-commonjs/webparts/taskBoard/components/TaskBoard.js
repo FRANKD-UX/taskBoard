@@ -19,7 +19,7 @@ var pnpjsConfig_1 = require("../../../pnpjsConfig");
 var TaskService_1 = require("../../../services/TaskService");
 var NotificationService_1 = require("../../../services/NotificationService");
 var UserRoleService_1 = require("../../../services/UserRoleService");
-var CollaboratorService_1 = require("../../../services/CollaboratorService"); // <-- ADDED
+var CollaboratorService_1 = require("../../../services/CollaboratorService");
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
 var INCIDENT_STATUSES = ['New', 'Investigating', 'Escalated', 'Resolved'];
@@ -244,6 +244,9 @@ var TaskBoard = function (_a) {
     var _l = (0, react_1.useState)(''), currentUserEmail = _l[0], setCurrentUserEmail = _l[1];
     var _m = (0, react_1.useState)(null), currentUserSpId = _m[0], setCurrentUserSpId = _m[1];
     var _o = (0, react_1.useState)(true), isLoading = _o[0], setIsLoading = _o[1];
+    // Role and department for visibility check
+    var _p = (0, react_1.useState)(''), currentUserRole = _p[0], setCurrentUserRole = _p[1];
+    var _q = (0, react_1.useState)(''), currentUserDepartment = _q[0], setCurrentUserDepartment = _q[1];
     var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
     var taskItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'task'; }); }, [workItems]);
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
@@ -306,7 +309,7 @@ var TaskBoard = function (_a) {
                             department: item.department || 'IT',
                             description: item.description,
                             createdBy: item.createdBy || createdByFallback,
-                            authorId: (_d = item.authorId) !== null && _d !== void 0 ? _d : null, // <-- ADDED
+                            authorId: (_d = item.authorId) !== null && _d !== void 0 ? _d : null,
                             severity: item.severity,
                             impact: item.impact,
                             affectedService: item.affectedService,
@@ -322,15 +325,23 @@ var TaskBoard = function (_a) {
             }
         });
     }); }, []);
-    // Filter tasks based on visibility rules
-    var filterVisibleTasks = function (allTasks, userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var collaborationTaskIds;
+    // Visibility rules:
+    // - Manager / TeamLead: all incidents in their department
+    // - Everyone else: tasks/incidents only if creator, assignee, or accepted collaborator
+    var filterVisibleTasks = function (allTasks, userId, role, department) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var collaborationTaskIds, isManagerOrLead;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0: return [4 /*yield*/, fetchCollaborationTaskIds(userId)];
                 case 1:
                     collaborationTaskIds = _a.sent();
+                    isManagerOrLead = role === 'Manager' || role === 'TeamLead';
                     return [2 /*return*/, allTasks.filter(function (task) {
+                            // For incidents, managers/leads see all in their department
+                            if (task.type === 'incident' && isManagerOrLead && task.department === department) {
+                                return true;
+                            }
+                            // Standard rules for all other cases (tasks, or non‑manager incident access)
                             if (task.authorId === userId)
                                 return true;
                             if (task.assignedToId === userId)
@@ -367,13 +378,13 @@ var TaskBoard = function (_a) {
                 case 4:
                     mappedTasks = _a.sent();
                     if (!userId) return [3 /*break*/, 6];
-                    return [4 /*yield*/, filterVisibleTasks(mappedTasks, userId)];
+                    return [4 /*yield*/, filterVisibleTasks(mappedTasks, userId, currentUserRole, currentUserDepartment)];
                 case 5:
                     visibleTasks = _a.sent();
                     setWorkItems(visibleTasks);
                     return [3 /*break*/, 7];
                 case 6:
-                    setWorkItems(mappedTasks); // fallback if no userId
+                    setWorkItems(mappedTasks);
                     _a.label = 7;
                 case 7: return [3 /*break*/, 9];
                 case 8:
@@ -387,30 +398,32 @@ var TaskBoard = function (_a) {
     (0, react_1.useEffect)(function () {
         var initialize = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
             var sp, user, role, roleError_1, notificationService, error_2;
-            var _a;
-            return tslib_1.__generator(this, function (_b) {
-                switch (_b.label) {
+            var _a, _b, _c;
+            return tslib_1.__generator(this, function (_d) {
+                switch (_d.label) {
                     case 0:
-                        _b.trys.push([0, 8, 9, 10]);
+                        _d.trys.push([0, 8, 9, 10]);
                         setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
                     case 1:
-                        user = _b.sent();
+                        user = _d.sent();
                         setCurrentUserName(user.Title || '');
                         setCurrentUserEmail(user.Email || '');
                         setCurrentUserSpId((_a = user.Id) !== null && _a !== void 0 ? _a : null);
-                        _b.label = 2;
+                        _d.label = 2;
                     case 2:
-                        _b.trys.push([2, 4, , 5]);
+                        _d.trys.push([2, 4, , 5]);
                         return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user.Email || '')];
                     case 3:
-                        role = _b.sent();
+                        role = _d.sent();
                         setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
+                        setCurrentUserRole((_b = role === null || role === void 0 ? void 0 : role.role) !== null && _b !== void 0 ? _b : '');
+                        setCurrentUserDepartment((_c = role === null || role === void 0 ? void 0 : role.department) !== null && _c !== void 0 ? _c : '');
                         return [3 /*break*/, 5];
                     case 4:
-                        roleError_1 = _b.sent();
-                        console.warn('TaskBoard: role lookup failed; continuing with read-only assignment mode', roleError_1);
+                        roleError_1 = _d.sent();
+                        console.warn('TaskBoard: role lookup failed; continuing with read‑only assignment mode', roleError_1);
                         setCanAssign(false);
                         return [3 /*break*/, 5];
                     case 5:
@@ -418,13 +431,13 @@ var TaskBoard = function (_a) {
                         taskService.setNotificationService(notificationService);
                         return [4 /*yield*/, taskService.checkAndEscalateSLAs()];
                     case 6:
-                        _b.sent();
+                        _d.sent();
                         return [4 /*yield*/, loadAndMapTasks()];
                     case 7:
-                        _b.sent();
+                        _d.sent();
                         return [3 /*break*/, 10];
                     case 8:
-                        error_2 = _b.sent();
+                        error_2 = _d.sent();
                         console.error('TaskBoard: initial load failed', error_2);
                         return [3 /*break*/, 10];
                     case 9:
@@ -454,7 +467,7 @@ var TaskBoard = function (_a) {
                         return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }))];
                     case 3:
                         mapped = _a.sent();
-                        return [4 /*yield*/, filterVisibleTasks(mapped, currentUserSpId)];
+                        return [4 /*yield*/, filterVisibleTasks(mapped, currentUserSpId, currentUserRole, currentUserDepartment)];
                     case 4:
                         visibleTasks = _a.sent();
                         setWorkItems(visibleTasks);
@@ -468,9 +481,7 @@ var TaskBoard = function (_a) {
             });
         }); }, 60000);
         return function () { return clearInterval(interval); };
-    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask]);
-    // ... rest of the component (handleDragEnd, handleTaskClick, etc.) remains identical to the version you provided.
-    // I'll include the rest unchanged for completeness.
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;
