@@ -1,29 +1,8 @@
 // BugReportWidget.tsx
-//
-// PURPOSE
-// -------
-// A fixed, floating "Report a Bug" widget that lives in the bottom-right
-// corner of the screen on every page of the app.
-//
-// HOW IT SENDS THE EMAIL
-// ----------------------
-// We use the browser's native `mailto:` protocol.  When the user submits,
-// we build a mailto link pre-filled with the subject, severity, description,
-// and reporter name, then open it with window.open().
-//
-// This means:
-//   - No backend / API needed — works inside SharePoint with zero config.
-//   - The user's default email client (Outlook) opens with the message ready.
-//   - The email lands directly in frank.ndlovu@fibrefi.co.za.
-//
-// MOUNTING
-// --------
-// Render <BugReportWidget /> once in AppLayout.tsx, outside <main>.
-// Because it uses `position: fixed`, it floats above all content regardless
-// of which view is active.
-
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { AadHttpClient } from '@microsoft/sp-http';
+import type { WebPartContext } from '@microsoft/sp-webpart-base';
 
 import { THEME } from './theme';
 
@@ -47,40 +26,73 @@ const SEVERITY_COLORS: Record<SeverityOption, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Builds a mailto: URL with subject and body pre-filled.
- * We encode the body so Outlook / Gmail render it correctly.
- */
-const buildMailtoUrl = (
+const getSpfxContext = (): WebPartContext | undefined => {
+    if (typeof window === 'undefined') return undefined;
+    const withContext = window as Window & { spfxContext?: WebPartContext };
+    return withContext.spfxContext;
+};
+
+const sendEmailViaGraph = async (
     reporterName: string,
     severity: SeverityOption,
     description: string
-): string => {
-    const subject = `[Bug Report] ${severity} — Task Board App`;
+): Promise<void> => {
+    const context = getSpfxContext();
+    if (!context) {
+        throw new Error('SPFx context not available – cannot send email.');
+    }
 
-    const body = [
-        'BUG REPORT — Task Board App',
-        '─────────────────────────────',
-        `Reporter  : ${reporterName || 'Not provided'}`,
-        `Severity  : ${severity}`,
-        `Date/Time : ${new Date().toLocaleString()}`,
-        '',
-        'DESCRIPTION',
-        '─────────────────────────────',
-        description,
-        '',
-        '─────────────────────────────',
-        'Sent via the Task Board in-app bug reporter.',
+    const client = await context.aadHttpClientFactory.getClient(
+        'https://graph.microsoft.com'
+    );
+
+    const subject = `[Bug Report] ${severity} — Task Board App`;
+    const bodyHtml = [
+        '<h3>BUG REPORT — Task Board App</h3>',
+        '<table style="border-collapse:collapse;">',
+        `<tr><td style="padding:4px 12px;"><strong>Reporter</strong></td><td>${reporterName || 'Not provided'}</td></tr>`,
+        `<tr><td style="padding:4px 12px;"><strong>Severity</strong></td><td>${severity}</td></tr>`,
+        `<tr><td style="padding:4px 12px;"><strong>Date/Time</strong></td><td>${new Date().toLocaleString()}</td></tr>`,
+        '</table>',
+        '<hr/>',
+        '<h4>Description</h4>',
+        `<p>${description.replace(/\n/g, '<br/>')}</p>`,
+        '<hr/>',
+        '<small>Sent via the Task Board in-app bug reporter.</small>',
     ].join('\n');
 
-    return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const message = {
+        message: {
+            subject,
+            body: {
+                contentType: 'HTML',
+                content: bodyHtml,
+            },
+            toRecipients: [
+                {
+                    emailAddress: {
+                        address: SUPPORT_EMAIL,
+                    },
+                },
+            ],
+        },
+        saveToSentItems: 'false',
+    };
+
+    await client.post(
+        'https://graph.microsoft.com/v1.0/me/sendMail',
+        AadHttpClient.configurations.v1,
+        {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+        }
+    );
 };
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** The collapsed trigger pill shown in the corner at all times. */
 const TriggerButton: React.FC<{
     onClick: () => void;
     hasUnread: boolean;
@@ -115,7 +127,6 @@ const TriggerButton: React.FC<{
             (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 20px rgba(0,0,0,0.22)';
         }}
     >
-        {/* Bug icon — inline SVG, no external dependency */}
         <svg
             width="16"
             height="16"
@@ -131,7 +142,6 @@ const TriggerButton: React.FC<{
             <path d="M6 13l-1.5 1.5M10 13l1.5 1.5" stroke="#f8fafc" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
         Report a Bug
-        {/* Pulse dot — subtle indicator */}
         {hasUnread && (
             <span
                 style={{
@@ -161,14 +171,13 @@ const TriggerButton: React.FC<{
 
 const BugReportWidget: React.FC = (): React.ReactElement => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
-
-    // Form state
     const [reporterName, setReporterName] = useState<string>('');
     const [severity, setSeverity] = useState<SeverityOption>('Medium');
     const [description, setDescription] = useState<string>('');
-    const [submitted, setSubmitted] = useState<boolean>(false);
+    const [isSending, setIsSending] = useState<boolean>(false);
+    const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [errorMessage, setErrorMessage] = useState<string>('');
 
-    // Close when user clicks outside the panel
     const panelRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -184,31 +193,43 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
         return () => document.removeEventListener('mousedown', handleOutsideClick);
     }, [isOpen]);
 
-    // Reset the form back to blank after panel closes (with a delay so the
-    // success screen doesn't flicker away before the animation finishes).
+    // Reset form when closed
     useEffect(() => {
         if (isOpen) return;
         const timer = setTimeout(() => {
-            setSubmitted(false);
+            setSendStatus('idle');
             setReporterName('');
             setSeverity('Medium');
             setDescription('');
+            setErrorMessage('');
         }, 300);
         return () => clearTimeout(timer);
     }, [isOpen]);
 
-    const handleSubmit = (): void => {
+    const handleSubmit = async (): Promise<void> => {
         if (!description.trim()) return;
 
-        const mailto = buildMailtoUrl(reporterName, severity, description);
-        window.open(mailto, '_blank');
-        setSubmitted(true);
+        setIsSending(true);
+        setSendStatus('idle');
+        setErrorMessage('');
+
+        try {
+            await sendEmailViaGraph(reporterName, severity, description);
+            setSendStatus('success');
+        } catch (error: any) {
+            console.error('Bug report send failed:', error);
+            setSendStatus('error');
+            setErrorMessage(
+                error?.message ?? 'Failed to send the bug report. Please try again or contact support directly.'
+            );
+        } finally {
+            setIsSending(false);
+        }
     };
 
-    const isSubmitDisabled = description.trim().length === 0;
+    const isSubmitDisabled = description.trim().length === 0 || isSending;
 
     return (
-        // Fixed container — positions everything relative to the viewport
         <div
             ref={panelRef}
             style={{
@@ -222,7 +243,7 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                 gap: '10px',
             }}
         >
-            {/* ── Expanded panel ── */}
+            {/* Expanded panel */}
             <div
                 style={{
                     width: '340px',
@@ -231,8 +252,6 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                     borderRadius: '16px',
                     boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
                     overflow: 'hidden',
-
-                    // Slide + fade animation driven by isOpen
                     opacity: isOpen ? 1 : 0,
                     transform: isOpen ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.97)',
                     pointerEvents: isOpen ? 'auto' : 'none',
@@ -254,7 +273,7 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <span style={{ fontSize: '14px', fontWeight: 700 }}>Report a Bug</span>
                         <span style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.4 }}>
-                            Sends directly to the app developer
+                            {isSending ? 'Sending...' : 'Sent directly via Microsoft Graph'}
                         </span>
                     </div>
                     <button
@@ -280,9 +299,7 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
 
                 {/* Body */}
                 <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-
-                    {submitted ? (
-                        // ── Success state ──
+                    {sendStatus === 'success' ? (
                         <div
                             style={{
                                 display: 'flex',
@@ -305,19 +322,17 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                     fontSize: '22px',
                                 }}
                             >
-                                {/* Checkmark SVG */}
                                 <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <circle cx="11" cy="11" r="10" stroke={THEME.colors.primary} strokeWidth="1.5" />
                                     <path d="M7 11.5l3 3 5-6" stroke={THEME.colors.primary} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                             </div>
                             <div style={{ fontWeight: 700, color: THEME.colors.textStrong, fontSize: '14px' }}>
-                                Outlook is opening
+                                Bug report sent!
                             </div>
                             <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, lineHeight: 1.6 }}>
-                                Your bug report is pre-filled and ready to send to{' '}
+                                Your report has been sent to{' '}
                                 <strong style={{ color: THEME.colors.textPrimary }}>{SUPPORT_EMAIL}</strong>.
-                                Just hit Send in Outlook.
                             </div>
                             <button
                                 type="button"
@@ -337,39 +352,63 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                 Done
                             </button>
                         </div>
-                    ) : (
-                        // ── Form state ──
-                        <>
-                            {/* Recipient info banner */}
+                    ) : sendStatus === 'error' ? (
+                        <div
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '16px 0',
+                                textAlign: 'center',
+                            }}
+                        >
                             <div
                                 style={{
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '50%',
+                                    backgroundColor: '#fee2e2',
                                     display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: '8px',
-                                    padding: '10px 12px',
-                                    backgroundColor: THEME.colors.primarySoft,
-                                    border: `1px solid ${THEME.colors.primary}40`,
-                                    borderRadius: '8px',
-                                    fontSize: '12px',
-                                    color: THEME.colors.textPrimary,
-                                    lineHeight: 1.5,
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '22px',
+                                    color: '#ef4444',
                                 }}
                             >
-                                <span style={{ color: THEME.colors.primary, fontSize: '14px', marginTop: '1px' }}>
-                                    {/* Info icon */}
-                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <circle cx="7" cy="7" r="6" stroke={THEME.colors.primary} strokeWidth="1.3" />
-                                        <path d="M7 6v4M7 4.5v.5" stroke={THEME.colors.primary} strokeWidth="1.3" strokeLinecap="round" />
-                                    </svg>
-                                </span>
-                                <span>
-                                    Bug reports are sent to{' '}
-                                    <strong>{SUPPORT_EMAIL}</strong> via Outlook.
-                                    Your default email client will open with the message ready to send.
-                                </span>
+                                !
+                            </div>
+                            <div style={{ fontWeight: 700, color: '#ef4444', fontSize: '14px' }}>
+                                Sending failed
+                            </div>
+                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, lineHeight: 1.6 }}>
+                                {errorMessage}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSendStatus('idle')}
+                                style={{
+                                    marginTop: '4px',
+                                    padding: '8px 20px',
+                                    backgroundColor: THEME.colors.primary,
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                }}
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    ) : (
+                        // Form state
+                        <>
+                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, lineHeight: 1.5 }}>
+                                This report will be sent directly to <strong>{SUPPORT_EMAIL}</strong>.
                             </div>
 
-                            {/* Your name */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <label
                                     htmlFor="bug-reporter-name"
@@ -395,7 +434,6 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                 />
                             </div>
 
-                            {/* Severity */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <span style={{ fontSize: '12px', fontWeight: 600, color: THEME.colors.textPrimary }}>
                                     Severity
@@ -427,7 +465,6 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                 </div>
                             </div>
 
-                            {/* Description */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <label
                                     htmlFor="bug-description"
@@ -444,7 +481,7 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                     style={{
                                         padding: '8px 10px',
                                         borderRadius: '8px',
-                                        border: `1px solid ${description.trim() ? THEME.colors.border : THEME.colors.border}`,
+                                        border: `1px solid ${THEME.colors.border}`,
                                         backgroundColor: THEME.colors.background,
                                         color: THEME.colors.textPrimary,
                                         fontSize: '13px',
@@ -456,7 +493,6 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                 />
                             </div>
 
-                            {/* Submit */}
                             <button
                                 type="button"
                                 onClick={handleSubmit}
@@ -472,16 +508,41 @@ const BugReportWidget: React.FC = (): React.ReactElement => {
                                     cursor: isSubmitDisabled ? 'default' : 'pointer',
                                     transition: 'background-color 160ms ease',
                                     letterSpacing: '0.01em',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
                                 }}
                             >
-                                Open in Outlook and Send
+                                {isSending ? (
+                                    <>
+                                        <div
+                                            style={{
+                                                width: '12px',
+                                                height: '12px',
+                                                borderRadius: '50%',
+                                                border: '2px solid rgba(255,255,255,0.3)',
+                                                borderTopColor: '#ffffff',
+                                                animation: 'bug-spin 600ms linear infinite',
+                                            }}
+                                        />
+                                        Sending...
+                                    </>
+                                ) : (
+                                    'Send Report'
+                                )}
                             </button>
+                            <style>{`
+                                @keyframes bug-spin {
+                                    to { transform: rotate(360deg); }
+                                }
+                            `}</style>
                         </>
                     )}
                 </div>
             </div>
 
-            {/* ── Trigger button ── */}
+            {/* Trigger button */}
             <TriggerButton
                 onClick={() => setIsOpen((prev) => !prev)}
                 hasUnread={!isOpen}
