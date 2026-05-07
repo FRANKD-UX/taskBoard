@@ -1,8 +1,6 @@
 // TaskBoard.tsx
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { DragDropContext } from 'react-beautiful-dnd';
-import type { DropResult } from 'react-beautiful-dnd';
 
 import AppLayout, { type PrimaryViewKey } from './AppLayout';
 import BoardView from './BoardView';
@@ -56,6 +54,10 @@ const POWER_BI_REPORTS: IPowerBiReport[] = [
     },
 ];
 
+// ---------------------------------------------------------------------------
+// Pure type-mapping helpers
+// ---------------------------------------------------------------------------
+
 const toRequestType = (type: WorkItemType): TaskRequestType => {
     return type === 'incident' ? 'Incident' : 'Task';
 };
@@ -104,60 +106,18 @@ const getTodayIso = (): string => {
     ].join('-');
 };
 
-const reorderTasksAfterDrag = (
-    tasks: Task[],
-    result: DropResult,
-    statuses: WorkItemStatus[]
-): Task[] => {
-    const { source, destination, draggableId } = result;
-    if (!destination) return tasks;
+// ---------------------------------------------------------------------------
+// Drag-and-drop state helper
+// ---------------------------------------------------------------------------
 
-    const srcStatus = source.droppableId as WorkItemStatus;
-    const dstStatus = destination.droppableId as WorkItemStatus;
+// NOTE: reorderTasksAfterDrag has been removed.
+// The old react-beautiful-dnd gave us source/destination *indices* so we had
+// to manually reorder arrays. dnd-kit gives us (taskId, newStatus) directly,
+// so a simple map() over workItems is all we need — see handleTaskStatusChange.
 
-    if (
-        statuses.indexOf(srcStatus) === -1 ||
-        statuses.indexOf(dstStatus) === -1 ||
-        (srcStatus === dstStatus && source.index === destination.index)
-    ) {
-        return tasks;
-    }
-
-    const draggedTask = tasks.find((task) => task.id === draggableId);
-    if (!draggedTask) return tasks;
-
-    const relevantTasks = tasks.filter((task) => task.type === draggedTask.type);
-    const grouped = statuses.reduce<Record<string, Task[]>>((acc, status) => {
-        acc[status] = [];
-        return acc;
-    }, {});
-
-    relevantTasks.forEach((task) => {
-        if (statuses.indexOf(task.status) > -1) {
-            grouped[task.status].push(task);
-        } else {
-            grouped[statuses[0]].push(task);
-        }
-    });
-
-    const srcTasks = grouped[srcStatus].slice();
-    const dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
-
-    const [moved] = srcTasks.splice(source.index, 1);
-    if (!moved) return tasks;
-
-    dstTasks.splice(destination.index, 0, { ...moved, status: dstStatus });
-    grouped[srcStatus] = srcTasks;
-    grouped[dstStatus] = dstTasks;
-
-    const reorderedRelevantTasks = statuses.reduce<Task[]>((acc, status) => acc.concat(grouped[status]), []);
-    const reorderedIds = new Set(reorderedRelevantTasks.map((task) => task.id));
-
-    return [
-        ...tasks.filter((task) => !reorderedIds.has(task.id)),
-        ...reorderedRelevantTasks,
-    ];
-};
+// ---------------------------------------------------------------------------
+// SharePoint user-resolution helpers
+// ---------------------------------------------------------------------------
 
 const resolveUserNameFromId = async (userId: number): Promise<string | null> => {
     const sp = getSP();
@@ -207,7 +167,6 @@ const resolveSharePointUserId = async (
     return null;
 };
 
-// ---------- helper to fetch collaboration task IDs for a user ----------
 const fetchCollaborationTaskIds = async (userId: number): Promise<Set<string>> => {
     const collabService = new CollaboratorService();
     try {
@@ -217,7 +176,10 @@ const fetchCollaborationTaskIds = async (userId: number): Promise<Set<string>> =
         return new Set<string>();
     }
 };
-// ------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement => {
     const [workItems, setWorkItems] = useState<Task[]>([]);
@@ -232,8 +194,6 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [currentUserSpId, setCurrentUserSpId] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
-
-    // Role and department for visibility check
     const [currentUserRole, setCurrentUserRole] = useState<string>('');
     const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
 
@@ -242,77 +202,79 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const taskItems = useMemo(() => workItems.filter((item) => item.type === 'task'), [workItems]);
     const incidentItems = useMemo(() => workItems.filter((item) => item.type === 'incident'), [workItems]);
 
+    // -----------------------------------------------------------------------
+    // Initialisation
+    // -----------------------------------------------------------------------
+
     useEffect(() => {
         (window as any).spfxContext = context;
         initSP(context);
     }, [context]);
 
-    const mapServiceItemToTask = React.useCallback(async (item: any, createdByFallback: string): Promise<Task> => {
-        const type = item.type || toWorkItemType(item.requestType);
-        const priority = type === 'incident' && item.severity
-            ? getPriorityFromSeverity(item.severity)
-            : toTaskPriority(item.priority);
+    const mapServiceItemToTask = React.useCallback(
+        async (item: any, createdByFallback: string): Promise<Task> => {
+            const type = item.type || toWorkItemType(item.requestType);
+            const priority = type === 'incident' && item.severity
+                ? getPriorityFromSeverity(item.severity)
+                : toTaskPriority(item.priority);
 
-        let assignedToName = '';
-        if (item.assignedTo) {
-            if (typeof item.assignedTo === 'object') {
-                assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
-            } else {
-                assignedToName = String(item.assignedTo);
+            let assignedToName = '';
+            if (item.assignedTo) {
+                if (typeof item.assignedTo === 'object') {
+                    assignedToName = item.assignedTo.Title || item.assignedTo.Name || '';
+                } else {
+                    assignedToName = String(item.assignedTo);
+                }
             }
-        }
-        if (!assignedToName) {
-            const userId = item.assignedToId;
-            if (userId && userId > 0) {
-                const resolvedName = await resolveUserNameFromId(userId);
-                if (resolvedName) assignedToName = resolvedName;
+            if (!assignedToName) {
+                const userId = item.assignedToId;
+                if (userId && userId > 0) {
+                    const resolvedName = await resolveUserNameFromId(userId);
+                    if (resolvedName) assignedToName = resolvedName;
+                }
             }
-        }
-        if (!assignedToName && item.assignedToEmail) {
-            assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
-        }
+            if (!assignedToName && item.assignedToEmail) {
+                assignedToName = item.assignedToEmail.split('@')[0] || item.assignedToEmail;
+            }
 
-        return {
-            id: item.id.toString(),
-            type,
-            title: item.title,
-            status: toWorkItemStatus(item.status, type),
-            priority,
-            site: toTaskSite(item.site),
-            assignedTo: assignedToName,
-            assignedToUser: assignedToName ? {
-                id: item.assignedToId ?? null,
-                name: assignedToName,
-                email: item.assignedToEmail ?? '',
-            } : undefined,
-            assignedToId: item.assignedToId ?? undefined,
-            assignedToEmail: item.assignedToEmail,
-            assignedToLoginName: item.assignedToLoginName,
-            startDate: item.startDate,
-            dueDate: item.dueDate,
-            createdAt: item.createdAt || new Date().toISOString(),
-            requestType: toRequestType(type),
-            department: item.department || 'IT',
-            description: item.description,
-            createdBy: item.createdBy || createdByFallback,
-            authorId: item.authorId ?? null,
-            severity: item.severity,
-            impact: item.impact,
-            affectedService: item.affectedService,
-            incidentTypeId: item.incidentTypeId,
-            incidentType: item.incidentType,
-            slaResponseMinutes: item.slaResponseMinutes,
-            slaResolutionMinutes: item.slaResolutionMinutes,
-            responseDueDate: item.responseDueDate,
-            resolutionDueDate: item.resolutionDueDate,
-            slaDeadline: item.slaDeadline,
-            slaStatus: item.slaStatus,
-        };
-    }, []);
+            return {
+                id: item.id.toString(),
+                type,
+                title: item.title,
+                status: toWorkItemStatus(item.status, type),
+                priority,
+                site: toTaskSite(item.site),
+                assignedTo: assignedToName,
+                assignedToUser: assignedToName
+                    ? { id: item.assignedToId ?? null, name: assignedToName, email: item.assignedToEmail ?? '' }
+                    : undefined,
+                assignedToId: item.assignedToId ?? undefined,
+                assignedToEmail: item.assignedToEmail,
+                assignedToLoginName: item.assignedToLoginName,
+                startDate: item.startDate,
+                dueDate: item.dueDate,
+                createdAt: item.createdAt || new Date().toISOString(),
+                requestType: toRequestType(type),
+                department: item.department || 'IT',
+                description: item.description,
+                createdBy: item.createdBy || createdByFallback,
+                authorId: item.authorId ?? null,
+                severity: item.severity,
+                impact: item.impact,
+                affectedService: item.affectedService,
+                incidentTypeId: item.incidentTypeId,
+                incidentType: item.incidentType,
+                slaResponseMinutes: item.slaResponseMinutes,
+                slaResolutionMinutes: item.slaResolutionMinutes,
+                responseDueDate: item.responseDueDate,
+                resolutionDueDate: item.resolutionDueDate,
+                slaDeadline: item.slaDeadline,
+                slaStatus: item.slaStatus,
+            };
+        },
+        []
+    );
 
-    // Visibility rules:
-    // - Manager / TeamLead: all incidents in their department
-    // - Everyone else: tasks/incidents only if creator, assignee, or accepted collaborator
     const filterVisibleTasks = async (
         allTasks: Task[],
         userId: number,
@@ -322,12 +284,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         const collaborationTaskIds = await fetchCollaborationTaskIds(userId);
         const isManagerOrLead = role === 'Manager' || role === 'TeamLead';
 
-        return allTasks.filter(task => {
-            // For incidents, managers/leads see all in their department
+        return allTasks.filter((task) => {
             if (task.type === 'incident' && isManagerOrLead && task.department === department) {
                 return true;
             }
-            // Standard rules for all other cases (tasks, or non‑manager incident access)
             if (task.authorId === userId) return true;
             if (task.assignedToId === userId) return true;
             if (collaborationTaskIds.has(task.id)) return true;
@@ -351,7 +311,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             );
 
             if (userId) {
-                const visibleTasks = await filterVisibleTasks(mappedTasks, userId, currentUserRole, currentUserDepartment);
+                const visibleTasks = await filterVisibleTasks(
+                    mappedTasks, userId, currentUserRole, currentUserDepartment
+                );
                 setWorkItems(visibleTasks);
             } else {
                 setWorkItems(mappedTasks);
@@ -377,7 +339,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     setCurrentUserRole(role?.role ?? '');
                     setCurrentUserDepartment(role?.department ?? '');
                 } catch (roleError) {
-                    console.warn('TaskBoard: role lookup failed; continuing with read‑only assignment mode', roleError);
+                    console.warn('TaskBoard: role lookup failed; defaulting to read-only assignment', roleError);
                     setCanAssign(false);
                 }
 
@@ -395,6 +357,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         initialize();
     }, [context]);
 
+    // Periodic background refresh (every 60 seconds)
     useEffect(() => {
         if (isLoading || !currentUserSpId) return;
         const interval = setInterval(async () => {
@@ -404,15 +367,18 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 const mapped = await Promise.all(
                     items.map((item: any) => mapServiceItemToTask(item, currentUserName))
                 );
-                const visibleTasks = await filterVisibleTasks(mapped, currentUserSpId, currentUserRole, currentUserDepartment);
+                const visibleTasks = await filterVisibleTasks(
+                    mapped, currentUserSpId, currentUserRole, currentUserDepartment
+                );
                 setWorkItems(visibleTasks);
             } catch (error) {
-                console.error('Periodic refresh failed', error);
+                console.error('TaskBoard: periodic refresh failed', error);
             }
         }, 60000);
         return () => clearInterval(interval);
     }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
 
+    // Tab switch fade animation
     useEffect(() => {
         if (activeView === displayedView) return;
         setIsViewVisible(false);
@@ -423,27 +389,51 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         return () => clearTimeout(timer);
     }, [activeView, displayedView]);
 
-    const handleDragEnd = async (result: DropResult): Promise<void> => {
-        const { destination, draggableId } = result;
-        if (!destination) return;
-        const draggedItem = workItems.find((item) => item.id === draggableId);
+    // -----------------------------------------------------------------------
+    // Drag-and-drop
+    // -----------------------------------------------------------------------
+
+    // Called by BoardView after a card is dropped onto a different column.
+    // BoardView has already done the optimistic UI update for itself; here we
+    // only need to persist the change to SharePoint and roll back on failure.
+    const handleTaskStatusChange = async (taskId: string, newStatus: WorkItemStatus): Promise<void> => {
+        const draggedItem = workItems.find((item) => item.id === taskId);
         if (!draggedItem) return;
+
         const statuses = getStatusesForType(draggedItem.type);
-        const newStatus = destination.droppableId as WorkItemStatus;
         if (statuses.indexOf(newStatus) === -1) return;
+
+        // Optimistic update: reflect the new status in local state immediately
+        // so the board stays in sync even if the API call takes a moment.
+        setWorkItems((current) =>
+            current.map((task) =>
+                task.id === taskId ? { ...task, status: newStatus } : task
+            )
+        );
+
+        // Persist to SharePoint in the background — does not block the UI.
         try {
-            await taskService.updateTask(Number(draggableId), {
+            await taskService.updateTask(Number(taskId), {
                 status: newStatus,
                 requestType: toRequestType(draggedItem.type),
                 severity: draggedItem.severity,
                 impact: draggedItem.impact,
                 affectedService: draggedItem.affectedService,
             });
-            setWorkItems((current) => reorderTasksAfterDrag(current, result, statuses));
         } catch (error) {
-            console.error('TaskBoard: drag update failed', error);
+            console.error('TaskBoard: background status update failed – rolling back', error);
+            // Rollback: restore the task to its previous status.
+            setWorkItems((current) =>
+                current.map((task) =>
+                    task.id === taskId ? { ...task, status: draggedItem.status } : task
+                )
+            );
         }
     };
+
+    // -----------------------------------------------------------------------
+    // Task CRUD handlers
+    // -----------------------------------------------------------------------
 
     const handleTaskClick = (task: Task): void => {
         setModalTask(task);
@@ -550,18 +540,20 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
             };
 
-            const shouldRebuildIncidentSla = effectiveTask.type === 'incident'
-                && Boolean(derivedSeverity)
-                && (
-                    isNew
-                    || existingTask?.incidentTypeId !== incidentTypeId
-                    || !existingTask?.responseDueDate
-                    || !existingTask?.resolutionDueDate
+            const shouldRebuildIncidentSla =
+                effectiveTask.type === 'incident' &&
+                Boolean(derivedSeverity) &&
+                (
+                    isNew ||
+                    existingTask?.incidentTypeId !== incidentTypeId ||
+                    !existingTask?.responseDueDate ||
+                    !existingTask?.resolutionDueDate
                 );
 
-            const incidentSla = shouldRebuildIncidentSla && derivedSeverity
-                ? buildIncidentSla(derivedSeverity)
-                : null;
+            const incidentSla =
+                shouldRebuildIncidentSla && derivedSeverity
+                    ? buildIncidentSla(derivedSeverity)
+                    : null;
 
             const payload = {
                 title: effectiveTask.title,
@@ -589,9 +581,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
             if (isNew) {
                 const created = await taskService.createTask(payload);
-                const returnedId: string | undefined = created?.id != null
-                    ? created.id.toString()
-                    : undefined;
+                const returnedId: string | undefined =
+                    created?.id != null ? created.id.toString() : undefined;
 
                 if (!returnedId) {
                     const items = await taskService.getTasks();
@@ -650,7 +641,9 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 slaStatus: payload.slaStatus,
             };
 
-            setWorkItems((prev) => prev.map((item) => (item.id === effectiveTask.id ? updated : item)));
+            setWorkItems((prev) =>
+                prev.map((item) => (item.id === effectiveTask.id ? updated : item))
+            );
             return updated;
         } catch (error) {
             console.error('TaskBoard: saveTask failed', error);
@@ -676,34 +669,94 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
             nextUpdates = rest;
         }
-        setWorkItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)));
+        setWorkItems((prev) =>
+            prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item))
+        );
     };
 
+    // -----------------------------------------------------------------------
+    // Render helpers
+    // -----------------------------------------------------------------------
+
     const renderLoadingState = (message: string): React.ReactElement => (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', color: THEME.colors.textSecondary, backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px' }}>
+        <div
+            style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '300px',
+                color: THEME.colors.textSecondary,
+                backgroundColor: THEME.colors.panel,
+                border: `1px solid ${THEME.colors.border}`,
+                borderRadius: '16px',
+            }}
+        >
             {message}
         </div>
     );
 
     const renderWorkspaceHeader = (title: string, description: string): React.ReactElement => (
-        <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
+        <div
+            style={{
+                backgroundColor: THEME.colors.panel,
+                border: `1px solid ${THEME.colors.border}`,
+                borderRadius: '16px',
+                padding: '20px 24px',
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+            }}
+        >
             <h1 style={{ margin: 0, fontSize: '24px', color: THEME.colors.textStrong }}>{title}</h1>
-            <p style={{ margin: '8px 0 0 0', color: THEME.colors.textSecondary, fontSize: '14px' }}>{description}</p>
+            <p style={{ margin: '8px 0 0 0', color: THEME.colors.textSecondary, fontSize: '14px' }}>
+                {description}
+            </p>
         </div>
     );
 
     const renderTaskWorkspaceView = (view: ViewKey): React.ReactElement => {
         if (isLoading) return renderLoadingState('Loading tasks...');
-
         switch (view) {
             case 'board':
-                return <BoardView tasks={taskItems} statuses={TASK_STATUSES} type="task" onTaskClick={handleTaskClick} onNewTask={handleNewTask} />;
+                return (
+                    <BoardView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        type="task"
+                        onTaskClick={handleTaskClick}
+                        onNewTask={handleNewTask}
+                        onTaskStatusChange={handleTaskStatusChange}
+                    />
+                );
             case 'table':
-                return <TableView tasks={taskItems} statuses={TASK_STATUSES} updateTask={handleUpdateTask} deleteTask={handleDeleteTask} canAssign={canAssign} />;
+                return (
+                    <TableView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        updateTask={handleUpdateTask}
+                        deleteTask={handleDeleteTask}
+                        canAssign={canAssign}
+                    />
+                );
             case 'calendar':
-                return <CalendarView tasks={taskItems} onTaskClick={(id) => { const task = taskItems.find((item) => item.id === id); if (task) handleTaskClick(task); }} />;
+                return (
+                    <CalendarView
+                        tasks={taskItems}
+                        onTaskClick={(id) => {
+                            const task = taskItems.find((item) => item.id === id);
+                            if (task) handleTaskClick(task);
+                        }}
+                    />
+                );
             case 'gantt':
-                return <GanttView tasks={taskItems} statuses={TASK_STATUSES} onTaskClick={(id) => { const task = taskItems.find((item) => item.id === id); if (task) handleTaskClick(task); }} />;
+                return (
+                    <GanttView
+                        tasks={taskItems}
+                        statuses={TASK_STATUSES}
+                        onTaskClick={(id) => {
+                            const task = taskItems.find((item) => item.id === id);
+                            if (task) handleTaskClick(task);
+                        }}
+                    />
+                );
             case 'chart':
                 return <ChartView tasks={taskItems} statuses={TASK_STATUSES} />;
             default:
@@ -713,9 +766,27 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const renderTasksView = (): React.ReactElement => (
         <div style={{ display: 'grid', gap: '16px' }}>
-            {renderWorkspaceHeader('Tasks', 'Operational planning, delivery tracking, and cross-team execution.')}
-            <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', gap: '4px', padding: '12px 16px 0 16px', backgroundColor: THEME.colors.panel, borderBottom: `1px solid ${THEME.colors.border}` }}>
+            {renderWorkspaceHeader(
+                'Tasks',
+                'Operational planning, delivery tracking, and cross-team execution.'
+            )}
+            <div
+                style={{
+                    backgroundColor: THEME.colors.panel,
+                    border: `1px solid ${THEME.colors.border}`,
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                }}
+            >
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: '4px',
+                        padding: '12px 16px 0 16px',
+                        backgroundColor: THEME.colors.panel,
+                        borderBottom: `1px solid ${THEME.colors.border}`,
+                    }}
+                >
                     {VIEW_TABS.map((tab) => {
                         const isActive = activeView === tab.key;
                         const isHovered = hoveredTab === tab.key;
@@ -727,9 +798,15 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                                 onMouseEnter={() => setHoveredTab(tab.key)}
                                 onMouseLeave={() => setHoveredTab(null)}
                                 style={{
-                                    backgroundColor: isActive ? THEME.colors.primary : isHovered ? THEME.colors.primarySoft : 'transparent',
+                                    backgroundColor: isActive
+                                        ? THEME.colors.primary
+                                        : isHovered
+                                        ? THEME.colors.primarySoft
+                                        : 'transparent',
                                     color: isActive ? '#ffffff' : THEME.colors.textPrimary,
-                                    border: isActive ? `1px solid ${THEME.colors.primary}` : '1px solid transparent',
+                                    border: isActive
+                                        ? `1px solid ${THEME.colors.primary}`
+                                        : '1px solid transparent',
                                     borderRadius: '8px',
                                     padding: '8px 14px',
                                     cursor: 'pointer',
@@ -743,7 +820,13 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                         );
                     })}
                 </div>
-                <div style={{ transition: 'opacity 180ms ease, transform 180ms ease', opacity: isViewVisible ? 1 : 0, transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)' }}>
+                <div
+                    style={{
+                        transition: 'opacity 180ms ease, transform 180ms ease',
+                        opacity: isViewVisible ? 1 : 0,
+                        transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
+                    }}
+                >
                     {renderTaskWorkspaceView(displayedView)}
                 </div>
             </div>
@@ -760,21 +843,64 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
         return (
             <div style={{ display: 'grid', gap: '16px' }}>
-                {renderWorkspaceHeader('Dashboard', 'Portfolio snapshot across active tasks and operational incidents.')}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                {renderWorkspaceHeader(
+                    'Dashboard',
+                    'Portfolio snapshot across active tasks and operational incidents.'
+                )}
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '16px',
+                    }}
+                >
                     {[
                         { label: 'Open Tasks', value: openTaskCount.toString() },
                         { label: 'Assigned Tasks', value: assignedCount.toString() },
                         { label: 'Open Incidents', value: openIncidentCount.toString() },
                         { label: 'P1 Incidents', value: criticalIncidentCount.toString() },
                     ].map((card) => (
-                        <div key={card.label} style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{card.label}</div>
-                            <div style={{ marginTop: '10px', fontSize: '30px', fontWeight: 700, color: THEME.colors.textStrong }}>{card.value}</div>
+                        <div
+                            key={card.label}
+                            style={{
+                                backgroundColor: THEME.colors.panel,
+                                border: `1px solid ${THEME.colors.border}`,
+                                borderRadius: '16px',
+                                padding: '18px 20px',
+                                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+                            }}
+                        >
+                            <div
+                                style={{
+                                    fontSize: '12px',
+                                    color: THEME.colors.textSecondary,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.08em',
+                                }}
+                            >
+                                {card.label}
+                            </div>
+                            <div
+                                style={{
+                                    marginTop: '10px',
+                                    fontSize: '30px',
+                                    fontWeight: 700,
+                                    color: THEME.colors.textStrong,
+                                }}
+                            >
+                                {card.value}
+                            </div>
                         </div>
                     ))}
                 </div>
-                <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
+                <div
+                    style={{
+                        backgroundColor: THEME.colors.panel,
+                        border: `1px solid ${THEME.colors.border}`,
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                    }}
+                >
                     <ChartView tasks={taskItems} statuses={TASK_STATUSES} />
                 </div>
             </div>
@@ -785,9 +911,26 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         if (isLoading) return renderLoadingState('Loading incidents...');
         return (
             <div style={{ display: 'grid', gap: '16px' }}>
-                {renderWorkspaceHeader('Incidents', 'Track operational disruptions with severity, ownership, and impact context.')}
-                <div style={{ backgroundColor: THEME.colors.panel, border: `1px solid ${THEME.colors.border}`, borderRadius: '16px', overflow: 'hidden' }}>
-                    <BoardView tasks={incidentItems} statuses={INCIDENT_STATUSES} type="incident" onTaskClick={handleTaskClick} onNewTask={handleNewTask} />
+                {renderWorkspaceHeader(
+                    'Incidents',
+                    'Track operational disruptions with severity, ownership, and impact context.'
+                )}
+                <div
+                    style={{
+                        backgroundColor: THEME.colors.panel,
+                        border: `1px solid ${THEME.colors.border}`,
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <BoardView
+                        tasks={incidentItems}
+                        statuses={INCIDENT_STATUSES}
+                        type="incident"
+                        onTaskClick={handleTaskClick}
+                        onNewTask={handleNewTask}
+                        onTaskStatusChange={handleTaskStatusChange}
+                    />
                 </div>
             </div>
         );
@@ -795,7 +938,10 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const renderReportsView = (): React.ReactElement => (
         <div style={{ display: 'grid', gap: '16px' }}>
-            {renderWorkspaceHeader('Reports', 'Embedded Power BI reports for operational analytics and performance tracking.')}
+            {renderWorkspaceHeader(
+                'Reports',
+                'Embedded Power BI reports for operational analytics and performance tracking.'
+            )}
             <ReportsView reports={POWER_BI_REPORTS} />
         </div>
     );
@@ -811,10 +957,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     };
 
     return (
-        <DragDropContext onDragEnd={handleDragEnd}>
-            <AppLayout selectedView={selectedView} onSelectView={setSelectedView}>
-                {renderSelectedView()}
-            </AppLayout>
+        <AppLayout selectedView={selectedView} onSelectView={setSelectedView}>
+            {renderSelectedView()}
             <WorkItemModal
                 task={modalTask}
                 canAssign={canAssign}
@@ -826,7 +970,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 onDelete={handleDeleteTask}
                 onClose={handleCloseModal}
             />
-        </DragDropContext>
+        </AppLayout>
     );
 };
 

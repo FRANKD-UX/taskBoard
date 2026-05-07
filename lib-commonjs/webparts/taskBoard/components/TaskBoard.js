@@ -4,7 +4,6 @@ var tslib_1 = require("tslib");
 // TaskBoard.tsx
 var React = tslib_1.__importStar(require("react"));
 var react_1 = require("react");
-var react_beautiful_dnd_1 = require("react-beautiful-dnd");
 var AppLayout_1 = tslib_1.__importDefault(require("./AppLayout"));
 var BoardView_1 = tslib_1.__importDefault(require("./BoardView"));
 var CalendarView_1 = tslib_1.__importDefault(require("./CalendarView"));
@@ -39,6 +38,9 @@ var POWER_BI_REPORTS = [
         tenantId: '83223fdc-5c39-40ab-b34a-896fca28d3b2',
     },
 ];
+// ---------------------------------------------------------------------------
+// Pure type-mapping helpers
+// ---------------------------------------------------------------------------
 var toRequestType = function (type) {
     return type === 'incident' ? 'Incident' : 'Task';
 };
@@ -79,45 +81,16 @@ var getTodayIso = function () {
         String(d.getDate()).padStart(2, '0'),
     ].join('-');
 };
-var reorderTasksAfterDrag = function (tasks, result, statuses) {
-    var source = result.source, destination = result.destination, draggableId = result.draggableId;
-    if (!destination)
-        return tasks;
-    var srcStatus = source.droppableId;
-    var dstStatus = destination.droppableId;
-    if (statuses.indexOf(srcStatus) === -1 ||
-        statuses.indexOf(dstStatus) === -1 ||
-        (srcStatus === dstStatus && source.index === destination.index)) {
-        return tasks;
-    }
-    var draggedTask = tasks.find(function (task) { return task.id === draggableId; });
-    if (!draggedTask)
-        return tasks;
-    var relevantTasks = tasks.filter(function (task) { return task.type === draggedTask.type; });
-    var grouped = statuses.reduce(function (acc, status) {
-        acc[status] = [];
-        return acc;
-    }, {});
-    relevantTasks.forEach(function (task) {
-        if (statuses.indexOf(task.status) > -1) {
-            grouped[task.status].push(task);
-        }
-        else {
-            grouped[statuses[0]].push(task);
-        }
-    });
-    var srcTasks = grouped[srcStatus].slice();
-    var dstTasks = srcStatus === dstStatus ? srcTasks : grouped[dstStatus].slice();
-    var moved = srcTasks.splice(source.index, 1)[0];
-    if (!moved)
-        return tasks;
-    dstTasks.splice(destination.index, 0, tslib_1.__assign(tslib_1.__assign({}, moved), { status: dstStatus }));
-    grouped[srcStatus] = srcTasks;
-    grouped[dstStatus] = dstTasks;
-    var reorderedRelevantTasks = statuses.reduce(function (acc, status) { return acc.concat(grouped[status]); }, []);
-    var reorderedIds = new Set(reorderedRelevantTasks.map(function (task) { return task.id; }));
-    return tslib_1.__spreadArray(tslib_1.__spreadArray([], tasks.filter(function (task) { return !reorderedIds.has(task.id); }), true), reorderedRelevantTasks, true);
-};
+// ---------------------------------------------------------------------------
+// Drag-and-drop state helper
+// ---------------------------------------------------------------------------
+// NOTE: reorderTasksAfterDrag has been removed.
+// The old react-beautiful-dnd gave us source/destination *indices* so we had
+// to manually reorder arrays. dnd-kit gives us (taskId, newStatus) directly,
+// so a simple map() over workItems is all we need — see handleTaskStatusChange.
+// ---------------------------------------------------------------------------
+// SharePoint user-resolution helpers
+// ---------------------------------------------------------------------------
 var resolveUserNameFromId = function (userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var sp, user, _a, userInfo, _b;
     return tslib_1.__generator(this, function (_c) {
@@ -208,7 +181,6 @@ var resolveSharePointUserId = function (email, loginName) { return tslib_1.__awa
         }
     });
 }); };
-// ---------- helper to fetch collaboration task IDs for a user ----------
 var fetchCollaborationTaskIds = function (userId) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
     var collabService, ids, _a;
     return tslib_1.__generator(this, function (_b) {
@@ -229,7 +201,9 @@ var fetchCollaborationTaskIds = function (userId) { return tslib_1.__awaiter(voi
         }
     });
 }); };
-// ------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 var TaskBoard = function (_a) {
     var context = _a.context;
     var _b = (0, react_1.useState)([]), workItems = _b[0], setWorkItems = _b[1];
@@ -244,12 +218,14 @@ var TaskBoard = function (_a) {
     var _l = (0, react_1.useState)(''), currentUserEmail = _l[0], setCurrentUserEmail = _l[1];
     var _m = (0, react_1.useState)(null), currentUserSpId = _m[0], setCurrentUserSpId = _m[1];
     var _o = (0, react_1.useState)(true), isLoading = _o[0], setIsLoading = _o[1];
-    // Role and department for visibility check
     var _p = (0, react_1.useState)(''), currentUserRole = _p[0], setCurrentUserRole = _p[1];
     var _q = (0, react_1.useState)(''), currentUserDepartment = _q[0], setCurrentUserDepartment = _q[1];
     var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
     var taskItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'task'; }); }, [workItems]);
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
+    // -----------------------------------------------------------------------
+    // Initialisation
+    // -----------------------------------------------------------------------
     (0, react_1.useEffect)(function () {
         window.spfxContext = context;
         (0, pnpjsConfig_1.initSP)(context);
@@ -294,11 +270,9 @@ var TaskBoard = function (_a) {
                             priority: priority,
                             site: toTaskSite(item.site),
                             assignedTo: assignedToName,
-                            assignedToUser: assignedToName ? {
-                                id: (_a = item.assignedToId) !== null && _a !== void 0 ? _a : null,
-                                name: assignedToName,
-                                email: (_b = item.assignedToEmail) !== null && _b !== void 0 ? _b : '',
-                            } : undefined,
+                            assignedToUser: assignedToName
+                                ? { id: (_a = item.assignedToId) !== null && _a !== void 0 ? _a : null, name: assignedToName, email: (_b = item.assignedToEmail) !== null && _b !== void 0 ? _b : '' }
+                                : undefined,
                             assignedToId: (_c = item.assignedToId) !== null && _c !== void 0 ? _c : undefined,
                             assignedToEmail: item.assignedToEmail,
                             assignedToLoginName: item.assignedToLoginName,
@@ -325,9 +299,6 @@ var TaskBoard = function (_a) {
             }
         });
     }); }, []);
-    // Visibility rules:
-    // - Manager / TeamLead: all incidents in their department
-    // - Everyone else: tasks/incidents only if creator, assignee, or accepted collaborator
     var filterVisibleTasks = function (allTasks, userId, role, department) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var collaborationTaskIds, isManagerOrLead;
         return tslib_1.__generator(this, function (_a) {
@@ -337,11 +308,9 @@ var TaskBoard = function (_a) {
                     collaborationTaskIds = _a.sent();
                     isManagerOrLead = role === 'Manager' || role === 'TeamLead';
                     return [2 /*return*/, allTasks.filter(function (task) {
-                            // For incidents, managers/leads see all in their department
                             if (task.type === 'incident' && isManagerOrLead && task.department === department) {
                                 return true;
                             }
-                            // Standard rules for all other cases (tasks, or non‑manager incident access)
                             if (task.authorId === userId)
                                 return true;
                             if (task.assignedToId === userId)
@@ -423,7 +392,7 @@ var TaskBoard = function (_a) {
                         return [3 /*break*/, 5];
                     case 4:
                         roleError_1 = _d.sent();
-                        console.warn('TaskBoard: role lookup failed; continuing with read‑only assignment mode', roleError_1);
+                        console.warn('TaskBoard: role lookup failed; defaulting to read-only assignment', roleError_1);
                         setCanAssign(false);
                         return [3 /*break*/, 5];
                     case 5:
@@ -449,6 +418,7 @@ var TaskBoard = function (_a) {
         }); };
         initialize();
     }, [context]);
+    // Periodic background refresh (every 60 seconds)
     (0, react_1.useEffect)(function () {
         if (isLoading || !currentUserSpId)
             return;
@@ -474,7 +444,7 @@ var TaskBoard = function (_a) {
                         return [3 /*break*/, 6];
                     case 5:
                         error_3 = _a.sent();
-                        console.error('Periodic refresh failed', error_3);
+                        console.error('TaskBoard: periodic refresh failed', error_3);
                         return [3 /*break*/, 6];
                     case 6: return [2 /*return*/];
                 }
@@ -482,6 +452,7 @@ var TaskBoard = function (_a) {
         }); }, 60000);
         return function () { return clearInterval(interval); };
     }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
+    // Tab switch fade animation
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
             return;
@@ -492,25 +463,34 @@ var TaskBoard = function (_a) {
         }, 120);
         return function () { return clearTimeout(timer); };
     }, [activeView, displayedView]);
-    var handleDragEnd = function (result) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var destination, draggableId, draggedItem, statuses, newStatus, error_4;
+    // -----------------------------------------------------------------------
+    // Drag-and-drop
+    // -----------------------------------------------------------------------
+    // Called by BoardView after a card is dropped onto a different column.
+    // BoardView has already done the optimistic UI update for itself; here we
+    // only need to persist the change to SharePoint and roll back on failure.
+    var handleTaskStatusChange = function (taskId, newStatus) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var draggedItem, statuses, error_4;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    destination = result.destination, draggableId = result.draggableId;
-                    if (!destination)
-                        return [2 /*return*/];
-                    draggedItem = workItems.find(function (item) { return item.id === draggableId; });
+                    draggedItem = workItems.find(function (item) { return item.id === taskId; });
                     if (!draggedItem)
                         return [2 /*return*/];
                     statuses = getStatusesForType(draggedItem.type);
-                    newStatus = destination.droppableId;
                     if (statuses.indexOf(newStatus) === -1)
                         return [2 /*return*/];
+                    // Optimistic update: reflect the new status in local state immediately
+                    // so the board stays in sync even if the API call takes a moment.
+                    setWorkItems(function (current) {
+                        return current.map(function (task) {
+                            return task.id === taskId ? tslib_1.__assign(tslib_1.__assign({}, task), { status: newStatus }) : task;
+                        });
+                    });
                     _a.label = 1;
                 case 1:
                     _a.trys.push([1, 3, , 4]);
-                    return [4 /*yield*/, taskService.updateTask(Number(draggableId), {
+                    return [4 /*yield*/, taskService.updateTask(Number(taskId), {
                             status: newStatus,
                             requestType: toRequestType(draggedItem.type),
                             severity: draggedItem.severity,
@@ -519,16 +499,24 @@ var TaskBoard = function (_a) {
                         })];
                 case 2:
                     _a.sent();
-                    setWorkItems(function (current) { return reorderTasksAfterDrag(current, result, statuses); });
                     return [3 /*break*/, 4];
                 case 3:
                     error_4 = _a.sent();
-                    console.error('TaskBoard: drag update failed', error_4);
+                    console.error('TaskBoard: background status update failed – rolling back', error_4);
+                    // Rollback: restore the task to its previous status.
+                    setWorkItems(function (current) {
+                        return current.map(function (task) {
+                            return task.id === taskId ? tslib_1.__assign(tslib_1.__assign({}, task), { status: draggedItem.status }) : task;
+                        });
+                    });
                     return [3 /*break*/, 4];
                 case 4: return [2 /*return*/];
             }
         });
     }); };
+    // -----------------------------------------------------------------------
+    // Task CRUD handlers
+    // -----------------------------------------------------------------------
     var handleTaskClick = function (task) {
         setModalTask(task);
     };
@@ -622,12 +610,12 @@ var TaskBoard = function (_a) {
                         var parsed = new Date(value);
                         return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
                     };
-                    shouldRebuildIncidentSla = effectiveTask_1.type === 'incident'
-                        && Boolean(derivedSeverity)
-                        && (isNew
-                            || (existingTask === null || existingTask === void 0 ? void 0 : existingTask.incidentTypeId) !== incidentTypeId
-                            || !(existingTask === null || existingTask === void 0 ? void 0 : existingTask.responseDueDate)
-                            || !(existingTask === null || existingTask === void 0 ? void 0 : existingTask.resolutionDueDate));
+                    shouldRebuildIncidentSla = effectiveTask_1.type === 'incident' &&
+                        Boolean(derivedSeverity) &&
+                        (isNew ||
+                            (existingTask === null || existingTask === void 0 ? void 0 : existingTask.incidentTypeId) !== incidentTypeId ||
+                            !(existingTask === null || existingTask === void 0 ? void 0 : existingTask.responseDueDate) ||
+                            !(existingTask === null || existingTask === void 0 ? void 0 : existingTask.resolutionDueDate));
                     incidentSla = shouldRebuildIncidentSla && derivedSeverity
                         ? (0, incidentSla_1.buildIncidentSla)(derivedSeverity)
                         : null;
@@ -658,9 +646,7 @@ var TaskBoard = function (_a) {
                     return [4 /*yield*/, taskService.createTask(payload)];
                 case 3:
                     created = _o.sent();
-                    returnedId = (created === null || created === void 0 ? void 0 : created.id) != null
-                        ? created.id.toString()
-                        : undefined;
+                    returnedId = (created === null || created === void 0 ? void 0 : created.id) != null ? created.id.toString() : undefined;
                     if (!!returnedId) return [3 /*break*/, 6];
                     return [4 /*yield*/, taskService.getTasks()];
                 case 4:
@@ -678,7 +664,9 @@ var TaskBoard = function (_a) {
                 case 8:
                     _o.sent();
                     updated_1 = tslib_1.__assign(tslib_1.__assign({}, effectiveTask_1), { priority: derivedPriority, assignedTo: finalAssigneeName, assignedToId: finalAssigneeId !== null && finalAssigneeId !== void 0 ? finalAssigneeId : undefined, startDate: payload.startDate, dueDate: payload.dueDate, requestType: toRequestType(effectiveTask_1.type), department: derivedDepartment, severity: derivedSeverity, incidentTypeId: incidentTypeId, incidentType: incidentType, slaResponseMinutes: payload.slaResponseMinutes, slaResolutionMinutes: payload.slaResolutionMinutes, responseDueDate: payload.responseDueDate, resolutionDueDate: payload.resolutionDueDate, slaDeadline: payload.slaDeadline, slaStatus: payload.slaStatus });
-                    setWorkItems(function (prev) { return prev.map(function (item) { return (item.id === effectiveTask_1.id ? updated_1 : item); }); });
+                    setWorkItems(function (prev) {
+                        return prev.map(function (item) { return (item.id === effectiveTask_1.id ? updated_1 : item); });
+                    });
                     return [2 /*return*/, updated_1];
                 case 9:
                     error_5 = _o.sent();
@@ -718,10 +706,30 @@ var TaskBoard = function (_a) {
             var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
             nextUpdates = rest;
         }
-        setWorkItems(function (prev) { return prev.map(function (item) { return (item.id === id ? tslib_1.__assign(tslib_1.__assign({}, item), nextUpdates) : item); }); });
+        setWorkItems(function (prev) {
+            return prev.map(function (item) { return (item.id === id ? tslib_1.__assign(tslib_1.__assign({}, item), nextUpdates) : item); });
+        });
     };
-    var renderLoadingState = function (message) { return (React.createElement("div", { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', color: theme_1.THEME.colors.textSecondary, backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px' } }, message)); };
-    var renderWorkspaceHeader = function (title, description) { return (React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' } },
+    // -----------------------------------------------------------------------
+    // Render helpers
+    // -----------------------------------------------------------------------
+    var renderLoadingState = function (message) { return (React.createElement("div", { style: {
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: '300px',
+            color: theme_1.THEME.colors.textSecondary,
+            backgroundColor: theme_1.THEME.colors.panel,
+            border: "1px solid ".concat(theme_1.THEME.colors.border),
+            borderRadius: '16px',
+        } }, message)); };
+    var renderWorkspaceHeader = function (title, description) { return (React.createElement("div", { style: {
+            backgroundColor: theme_1.THEME.colors.panel,
+            border: "1px solid ".concat(theme_1.THEME.colors.border),
+            borderRadius: '16px',
+            padding: '20px 24px',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+        } },
         React.createElement("h1", { style: { margin: 0, fontSize: '24px', color: theme_1.THEME.colors.textStrong } }, title),
         React.createElement("p", { style: { margin: '8px 0 0 0', color: theme_1.THEME.colors.textSecondary, fontSize: '14px' } }, description))); };
     var renderTaskWorkspaceView = function (view) {
@@ -729,15 +737,21 @@ var TaskBoard = function (_a) {
             return renderLoadingState('Loading tasks...');
         switch (view) {
             case 'board':
-                return React.createElement(BoardView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, type: "task", onTaskClick: handleTaskClick, onNewTask: handleNewTask });
+                return (React.createElement(BoardView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, type: "task", onTaskClick: handleTaskClick, onNewTask: handleNewTask, onTaskStatusChange: handleTaskStatusChange }));
             case 'table':
-                return React.createElement(TableView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, updateTask: handleUpdateTask, deleteTask: handleDeleteTask, canAssign: canAssign });
+                return (React.createElement(TableView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, updateTask: handleUpdateTask, deleteTask: handleDeleteTask, canAssign: canAssign }));
             case 'calendar':
-                return React.createElement(CalendarView_1.default, { tasks: taskItems, onTaskClick: function (id) { var task = taskItems.find(function (item) { return item.id === id; }); if (task)
-                        handleTaskClick(task); } });
+                return (React.createElement(CalendarView_1.default, { tasks: taskItems, onTaskClick: function (id) {
+                        var task = taskItems.find(function (item) { return item.id === id; });
+                        if (task)
+                            handleTaskClick(task);
+                    } }));
             case 'gantt':
-                return React.createElement(GanttView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, onTaskClick: function (id) { var task = taskItems.find(function (item) { return item.id === id; }); if (task)
-                        handleTaskClick(task); } });
+                return (React.createElement(GanttView_1.default, { tasks: taskItems, statuses: TASK_STATUSES, onTaskClick: function (id) {
+                        var task = taskItems.find(function (item) { return item.id === id; });
+                        if (task)
+                            handleTaskClick(task);
+                    } }));
             case 'chart':
                 return React.createElement(ChartView_1.default, { tasks: taskItems, statuses: TASK_STATUSES });
             default:
@@ -746,14 +760,31 @@ var TaskBoard = function (_a) {
     };
     var renderTasksView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
         renderWorkspaceHeader('Tasks', 'Operational planning, delivery tracking, and cross-team execution.'),
-        React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
-            React.createElement("div", { style: { display: 'flex', gap: '4px', padding: '12px 16px 0 16px', backgroundColor: theme_1.THEME.colors.panel, borderBottom: "1px solid ".concat(theme_1.THEME.colors.border) } }, VIEW_TABS.map(function (tab) {
+        React.createElement("div", { style: {
+                backgroundColor: theme_1.THEME.colors.panel,
+                border: "1px solid ".concat(theme_1.THEME.colors.border),
+                borderRadius: '16px',
+                overflow: 'hidden',
+            } },
+            React.createElement("div", { style: {
+                    display: 'flex',
+                    gap: '4px',
+                    padding: '12px 16px 0 16px',
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+                } }, VIEW_TABS.map(function (tab) {
                 var isActive = activeView === tab.key;
                 var isHovered = hoveredTab === tab.key;
                 return (React.createElement("button", { key: tab.key, type: "button", onClick: function () { return setActiveView(tab.key); }, onMouseEnter: function () { return setHoveredTab(tab.key); }, onMouseLeave: function () { return setHoveredTab(null); }, style: {
-                        backgroundColor: isActive ? theme_1.THEME.colors.primary : isHovered ? theme_1.THEME.colors.primarySoft : 'transparent',
+                        backgroundColor: isActive
+                            ? theme_1.THEME.colors.primary
+                            : isHovered
+                                ? theme_1.THEME.colors.primarySoft
+                                : 'transparent',
                         color: isActive ? '#ffffff' : theme_1.THEME.colors.textPrimary,
-                        border: isActive ? "1px solid ".concat(theme_1.THEME.colors.primary) : '1px solid transparent',
+                        border: isActive
+                            ? "1px solid ".concat(theme_1.THEME.colors.primary)
+                            : '1px solid transparent',
                         borderRadius: '8px',
                         padding: '8px 14px',
                         cursor: 'pointer',
@@ -762,7 +793,11 @@ var TaskBoard = function (_a) {
                         transition: 'background-color 160ms ease, color 160ms ease',
                     } }, tab.label));
             })),
-            React.createElement("div", { style: { transition: 'opacity 180ms ease, transform 180ms ease', opacity: isViewVisible ? 1 : 0, transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)' } }, renderTaskWorkspaceView(displayedView))))); };
+            React.createElement("div", { style: {
+                    transition: 'opacity 180ms ease, transform 180ms ease',
+                    opacity: isViewVisible ? 1 : 0,
+                    transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
+                } }, renderTaskWorkspaceView(displayedView))))); };
     var renderDashboardView = function () {
         var openTaskCount = taskItems.filter(function (item) { return item.status !== 'Completed'; }).length;
         var openIncidentCount = incidentItems.filter(function (item) { return item.status !== 'Resolved'; }).length;
@@ -772,15 +807,40 @@ var TaskBoard = function (_a) {
             return renderLoadingState('Loading dashboard...');
         return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
             renderWorkspaceHeader('Dashboard', 'Portfolio snapshot across active tasks and operational incidents.'),
-            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' } }, [
+            React.createElement("div", { style: {
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '16px',
+                } }, [
                 { label: 'Open Tasks', value: openTaskCount.toString() },
                 { label: 'Assigned Tasks', value: assignedCount.toString() },
                 { label: 'Open Incidents', value: openIncidentCount.toString() },
                 { label: 'P1 Incidents', value: criticalIncidentCount.toString() },
-            ].map(function (card) { return (React.createElement("div", { key: card.label, style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' } },
-                React.createElement("div", { style: { fontSize: '12px', color: theme_1.THEME.colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' } }, card.label),
-                React.createElement("div", { style: { marginTop: '10px', fontSize: '30px', fontWeight: 700, color: theme_1.THEME.colors.textStrong } }, card.value))); })),
-            React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
+            ].map(function (card) { return (React.createElement("div", { key: card.label, style: {
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    border: "1px solid ".concat(theme_1.THEME.colors.border),
+                    borderRadius: '16px',
+                    padding: '18px 20px',
+                    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+                } },
+                React.createElement("div", { style: {
+                        fontSize: '12px',
+                        color: theme_1.THEME.colors.textSecondary,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                    } }, card.label),
+                React.createElement("div", { style: {
+                        marginTop: '10px',
+                        fontSize: '30px',
+                        fontWeight: 700,
+                        color: theme_1.THEME.colors.textStrong,
+                    } }, card.value))); })),
+            React.createElement("div", { style: {
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    border: "1px solid ".concat(theme_1.THEME.colors.border),
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                } },
                 React.createElement(ChartView_1.default, { tasks: taskItems, statuses: TASK_STATUSES }))));
     };
     var renderIncidentsView = function () {
@@ -788,8 +848,13 @@ var TaskBoard = function (_a) {
             return renderLoadingState('Loading incidents...');
         return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
             renderWorkspaceHeader('Incidents', 'Track operational disruptions with severity, ownership, and impact context.'),
-            React.createElement("div", { style: { backgroundColor: theme_1.THEME.colors.panel, border: "1px solid ".concat(theme_1.THEME.colors.border), borderRadius: '16px', overflow: 'hidden' } },
-                React.createElement(BoardView_1.default, { tasks: incidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask }))));
+            React.createElement("div", { style: {
+                    backgroundColor: theme_1.THEME.colors.panel,
+                    border: "1px solid ".concat(theme_1.THEME.colors.border),
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                } },
+                React.createElement(BoardView_1.default, { tasks: incidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask, onTaskStatusChange: handleTaskStatusChange }))));
     };
     var renderReportsView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
         renderWorkspaceHeader('Reports', 'Embedded Power BI reports for operational analytics and performance tracking.'),
@@ -803,8 +868,8 @@ var TaskBoard = function (_a) {
             default: return renderTasksView();
         }
     };
-    return (React.createElement(react_beautiful_dnd_1.DragDropContext, { onDragEnd: handleDragEnd },
-        React.createElement(AppLayout_1.default, { selectedView: selectedView, onSelectView: setSelectedView }, renderSelectedView()),
+    return (React.createElement(AppLayout_1.default, { selectedView: selectedView, onSelectView: setSelectedView },
+        renderSelectedView(),
         React.createElement(WorkItemModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: pnpjsConfig_1.DATA_SITE, context: context, currentUserName: currentUserName, currentUserSpId: currentUserSpId, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
 };
 exports.default = TaskBoard;
