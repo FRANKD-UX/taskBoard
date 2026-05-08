@@ -18,9 +18,10 @@ import { useEffect, useState } from 'react';
 import {
     DndContext,
     DragEndEvent,
+    DragOverlay,
     DragStartEvent,
     PointerSensor,
-    closestCenter,
+    pointerWithin,
     useSensor,
     useSensors,
 } from '@dnd-kit/core';
@@ -648,27 +649,27 @@ const BoardView: React.FC<IBoardViewProps> = ({
     onNewTask,
     onTaskStatusChange,
 }): React.ReactElement => {
-    // activeTaskId tracks which card is currently being dragged.
-    // We pass it down so DraggableCard can apply the lifted style to itself.
-    const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+    // Full Task object so DragOverlay can render the card content.
+    // activeTask?.id is passed down as activeTaskId so DraggableCard ghost works.
+    const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-    const [hoveredTaskId,  setHoveredTaskId]  = useState<string | null>(null);
-    const [hoveredColumn,  setHoveredColumn]  = useState<string | null>(null);
+    // Measured pixel width of the card at the moment drag starts.
+    // DragOverlay sizes itself to the source element's clipped bounding rect,
+    // which is wrong when the source is inside overflow-y: auto. We capture the
+    // true offsetWidth from the DOM node and lock the overlay to that value.
+    const [draggedCardWidth, setDraggedCardWidth] = useState<number>(280);
 
-    // Re-render every second to keep SLA countdowns accurate.
+    const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+    const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+
     const [, setTick] = useState(0);
     useEffect(() => {
         const interval = setInterval(() => setTick((t) => t + 1), 1000);
         return () => clearInterval(interval);
     }, []);
 
-    // Group the incoming task list into per-status buckets.
-    // We do this inside the render so it always reflects the latest props.
     const tasksByStatus = groupTasksByStatus(tasks, statuses);
 
-    // PointerSensor is the standard mouse/touch sensor for dnd-kit.
-    // activationConstraint delays activation by 8px so that normal clicks
-    // are not accidentally treated as drags.
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: { distance: 8 },
@@ -676,42 +677,47 @@ const BoardView: React.FC<IBoardViewProps> = ({
     );
 
     const handleDragStart = (event: DragStartEvent): void => {
-        setActiveTaskId(event.active.id as string);
+        const dragged = tasks.find((t) => t.id === (event.active.id as string));
+        setActiveTask(dragged ?? null);
+
+        // event.active.rect.current.initial is the card's bounding rect
+        // measured by dnd-kit at the moment the pointer activates the drag.
+        // width here is the real rendered width — not clipped by overflow.
+        const initialRect = event.active.rect.current.initial;
+        if (initialRect) {
+            setDraggedCardWidth(initialRect.width);
+        }
     };
 
     const handleDragEnd = (event: DragEndEvent): void => {
         const { active, over } = event;
 
-        setActiveTaskId(null);
+        setActiveTask(null);
 
-        // If dropped outside any column, do nothing.
         if (!over) return;
 
-        const taskId   = active.id as string;
+        const taskId    = active.id as string;
         const newStatus = over.id as WorkItemStatus;
 
-        // Find the task that was dragged to check its current status.
         const draggedTask = tasks.find((t) => t.id === taskId);
         if (!draggedTask) return;
 
-        // Skip if dropped back into the same column – no change needed.
         if (draggedTask.status === newStatus) return;
 
-        // The parent owns state and persistence (TaskService).
-        // We call the callback and let the parent do the optimistic update + API call.
         onTaskStatusChange(taskId, newStatus);
     };
 
     return (
-        /*
-            DndContext is the drag orchestrator – it replaces DragDropContext.
-            collisionDetection: closestCenter means dnd-kit picks the droppable
-            whose centre point is closest to the dragged item's centre.
-            That is the correct algorithm for a column-based Kanban board.
-        */
         <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            // pointerWithin: uses the actual cursor position to decide which column
+            // the card is over. This is correct for large rectangular drop zones.
+            //
+            // closestCenter was wrong here — it measures distance from the dragged
+            // item's centre to each droppable's centre, which caused the card to
+            // snap to whichever column centre was geometrically closest at drag
+            // start rather than following where the cursor actually was.
+            collisionDetection={pointerWithin}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
@@ -723,7 +729,7 @@ const BoardView: React.FC<IBoardViewProps> = ({
                             status={status}
                             type={type}
                             tasks={tasksByStatus[status] || []}
-                            activeTaskId={activeTaskId}
+                            activeTaskId={activeTask?.id ?? null}
                             hoveredColumn={hoveredColumn}
                             hoveredTaskId={hoveredTaskId}
                             onNewTask={onNewTask}
@@ -734,6 +740,78 @@ const BoardView: React.FC<IBoardViewProps> = ({
                     ))}
                 </div>
             </div>
+
+            {/*
+                DragOverlay portals to document.body — outside every column's
+                overflow-y: auto stacking context — so it always paints on top.
+            */}
+            <DragOverlay dropAnimation={null}>
+                {activeTask ? (
+                    <div
+                        style={{
+                            width: draggedCardWidth,
+                            boxSizing: 'border-box',
+                            backgroundColor: THEME.colors.panel,
+                            borderRadius: '10px',
+                            padding: '14px',
+                            // border shorthand must come BEFORE borderLeft, otherwise
+                            // border resets all sides and wipes out the left accent.
+                            border: '1px solid #e2e8f0',
+                            borderLeft: `4px solid ${
+                                type === 'incident'
+                                    ? getSeverityColor(activeTask.severity)
+                                    : getStatusColor(activeTask.status as WorkItemStatus)
+                            }`,
+                            color: THEME.colors.textPrimary,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                            cursor: 'grabbing',
+                            userSelect: 'none',
+                            pointerEvents: 'none',
+                            boxShadow: '0 20px 40px rgba(0,0,0,0.2), 0 0 0 2px rgba(59,130,246,0.5)',
+                        }}
+                    >
+                        {/* Title row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            <div style={{ width: '20px', height: '20px', flexShrink: 0, color: THEME.colors.textSecondary, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                :::
+                            </div>
+                            {/* minWidth:0 allows the title to shrink — without it flex children
+                                never shrink below their content size and the title gets pushed out */}
+                            <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {activeTask.title || 'New Item'}
+                                </div>
+                                {/* flexShrink:0 keeps the badge at its natural size — it must never collapse */}
+                                <span style={{ flexShrink: 0, backgroundColor: type === 'incident' ? getSeverityColor(activeTask.severity) : getStatusColor(activeTask.status as WorkItemStatus), color: '#ffffff', borderRadius: '999px', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}>
+                                    {type === 'incident' ? (activeTask.severity || 'P4') : activeTask.status}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                            <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: getAvatarColor(activeTask.assignedTo || 'Unassigned'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 600 }}>
+                                {getInitials(activeTask.assignedTo || 'Unassigned')}
+                            </div>
+                            <span>{activeTask.assignedTo || 'Unassigned'}</span>
+                        </div>
+
+                        {type === 'incident' ? (
+                            <div style={{ fontSize: '12px', color: THEME.colors.textSecondary }}>
+                                {activeTask.affectedService || 'Service not set'}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                                <span style={{ color: THEME.colors.textSecondary }}>{formatDisplayDate(activeTask.dueDate)}</span>
+                                <span style={{ backgroundColor: getPriorityColor(activeTask.priority), color: '#0f172a', borderRadius: '999px', padding: '2px 8px', fontWeight: 600 }}>
+                                    {activeTask.priority}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                ) : null}
+            </DragOverlay>
         </DndContext>
     );
 };

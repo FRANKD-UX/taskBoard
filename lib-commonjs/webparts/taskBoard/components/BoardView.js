@@ -376,58 +376,96 @@ var DraggableCard = function (_a) {
 // ---------- ROOT COMPONENT ----------
 var BoardView = function (_a) {
     var tasks = _a.tasks, statuses = _a.statuses, type = _a.type, onTaskClick = _a.onTaskClick, onNewTask = _a.onNewTask, onTaskStatusChange = _a.onTaskStatusChange;
-    // activeTaskId tracks which card is currently being dragged.
-    // We pass it down so DraggableCard can apply the lifted style to itself.
-    var _b = (0, react_1.useState)(null), activeTaskId = _b[0], setActiveTaskId = _b[1];
-    var _c = (0, react_1.useState)(null), hoveredTaskId = _c[0], setHoveredTaskId = _c[1];
-    var _d = (0, react_1.useState)(null), hoveredColumn = _d[0], setHoveredColumn = _d[1];
-    // Re-render every second to keep SLA countdowns accurate.
-    var _e = (0, react_1.useState)(0), setTick = _e[1];
+    // Full Task object so DragOverlay can render the card content.
+    // activeTask?.id is passed down as activeTaskId so DraggableCard ghost works.
+    var _b = (0, react_1.useState)(null), activeTask = _b[0], setActiveTask = _b[1];
+    // Measured pixel width of the card at the moment drag starts.
+    // DragOverlay sizes itself to the source element's clipped bounding rect,
+    // which is wrong when the source is inside overflow-y: auto. We capture the
+    // true offsetWidth from the DOM node and lock the overlay to that value.
+    var _c = (0, react_1.useState)(280), draggedCardWidth = _c[0], setDraggedCardWidth = _c[1];
+    var _d = (0, react_1.useState)(null), hoveredTaskId = _d[0], setHoveredTaskId = _d[1];
+    var _e = (0, react_1.useState)(null), hoveredColumn = _e[0], setHoveredColumn = _e[1];
+    var _f = (0, react_1.useState)(0), setTick = _f[1];
     (0, react_1.useEffect)(function () {
         var interval = setInterval(function () { return setTick(function (t) { return t + 1; }); }, 1000);
         return function () { return clearInterval(interval); };
     }, []);
-    // Group the incoming task list into per-status buckets.
-    // We do this inside the render so it always reflects the latest props.
     var tasksByStatus = groupTasksByStatus(tasks, statuses);
-    // PointerSensor is the standard mouse/touch sensor for dnd-kit.
-    // activationConstraint delays activation by 8px so that normal clicks
-    // are not accidentally treated as drags.
     var sensors = (0, core_1.useSensors)((0, core_1.useSensor)(core_1.PointerSensor, {
         activationConstraint: { distance: 8 },
     }));
     var handleDragStart = function (event) {
-        setActiveTaskId(event.active.id);
+        var dragged = tasks.find(function (t) { return t.id === event.active.id; });
+        setActiveTask(dragged !== null && dragged !== void 0 ? dragged : null);
+        // event.active.rect.current.initial is the card's bounding rect
+        // measured by dnd-kit at the moment the pointer activates the drag.
+        // width here is the real rendered width — not clipped by overflow.
+        var initialRect = event.active.rect.current.initial;
+        if (initialRect) {
+            setDraggedCardWidth(initialRect.width);
+        }
     };
     var handleDragEnd = function (event) {
         var active = event.active, over = event.over;
-        setActiveTaskId(null);
-        // If dropped outside any column, do nothing.
+        setActiveTask(null);
         if (!over)
             return;
         var taskId = active.id;
         var newStatus = over.id;
-        // Find the task that was dragged to check its current status.
         var draggedTask = tasks.find(function (t) { return t.id === taskId; });
         if (!draggedTask)
             return;
-        // Skip if dropped back into the same column – no change needed.
         if (draggedTask.status === newStatus)
             return;
-        // The parent owns state and persistence (TaskService).
-        // We call the callback and let the parent do the optimistic update + API call.
         onTaskStatusChange(taskId, newStatus);
     };
-    return (
-    /*
-        DndContext is the drag orchestrator – it replaces DragDropContext.
-        collisionDetection: closestCenter means dnd-kit picks the droppable
-        whose centre point is closest to the dragged item's centre.
-        That is the correct algorithm for a column-based Kanban board.
-    */
-    React.createElement(core_1.DndContext, { sensors: sensors, collisionDetection: core_1.closestCenter, onDragStart: handleDragStart, onDragEnd: handleDragEnd },
+    return (React.createElement(core_1.DndContext, { sensors: sensors, 
+        // pointerWithin: uses the actual cursor position to decide which column
+        // the card is over. This is correct for large rectangular drop zones.
+        //
+        // closestCenter was wrong here — it measures distance from the dragged
+        // item's centre to each droppable's centre, which caused the card to
+        // snap to whichever column centre was geometrically closest at drag
+        // start rather than following where the cursor actually was.
+        collisionDetection: core_1.pointerWithin, onDragStart: handleDragStart, onDragEnd: handleDragEnd },
         React.createElement("div", { style: boardOuterStyle },
-            React.createElement("div", { style: boardColumnsRowStyle }, statuses.map(function (status) { return (React.createElement(DroppableColumn, { key: status, status: status, type: type, tasks: tasksByStatus[status] || [], activeTaskId: activeTaskId, hoveredColumn: hoveredColumn, hoveredTaskId: hoveredTaskId, onNewTask: onNewTask, onTaskClick: onTaskClick, onColumnHover: setHoveredColumn, onTaskHover: setHoveredTaskId })); })))));
+            React.createElement("div", { style: boardColumnsRowStyle }, statuses.map(function (status) {
+                var _a;
+                return (React.createElement(DroppableColumn, { key: status, status: status, type: type, tasks: tasksByStatus[status] || [], activeTaskId: (_a = activeTask === null || activeTask === void 0 ? void 0 : activeTask.id) !== null && _a !== void 0 ? _a : null, hoveredColumn: hoveredColumn, hoveredTaskId: hoveredTaskId, onNewTask: onNewTask, onTaskClick: onTaskClick, onColumnHover: setHoveredColumn, onTaskHover: setHoveredTaskId }));
+            }))),
+        React.createElement(core_1.DragOverlay, { dropAnimation: null }, activeTask ? (React.createElement("div", { style: {
+                width: draggedCardWidth,
+                boxSizing: 'border-box',
+                backgroundColor: theme_1.THEME.colors.panel,
+                borderRadius: '10px',
+                padding: '14px',
+                // border shorthand must come BEFORE borderLeft, otherwise
+                // border resets all sides and wipes out the left accent.
+                border: '1px solid #e2e8f0',
+                borderLeft: "4px solid ".concat(type === 'incident'
+                    ? getSeverityColor(activeTask.severity)
+                    : getStatusColor(activeTask.status)),
+                color: theme_1.THEME.colors.textPrimary,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                cursor: 'grabbing',
+                userSelect: 'none',
+                pointerEvents: 'none',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.2), 0 0 0 2px rgba(59,130,246,0.5)',
+            } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 } },
+                React.createElement("div", { style: { width: '20px', height: '20px', flexShrink: 0, color: theme_1.THEME.colors.textSecondary, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, ":::"),
+                React.createElement("div", { style: { flex: 1, minWidth: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
+                    React.createElement("div", { style: { fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, activeTask.title || 'New Item'),
+                    React.createElement("span", { style: { flexShrink: 0, backgroundColor: type === 'incident' ? getSeverityColor(activeTask.severity) : getStatusColor(activeTask.status), color: '#ffffff', borderRadius: '999px', padding: '2px 8px', fontSize: '11px', fontWeight: 600 } }, type === 'incident' ? (activeTask.severity || 'P4') : activeTask.status))),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' } },
+                React.createElement("div", { style: { width: '26px', height: '26px', borderRadius: '50%', backgroundColor: getAvatarColor(activeTask.assignedTo || 'Unassigned'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 600 } }, getInitials(activeTask.assignedTo || 'Unassigned')),
+                React.createElement("span", null, activeTask.assignedTo || 'Unassigned')),
+            type === 'incident' ? (React.createElement("div", { style: { fontSize: '12px', color: theme_1.THEME.colors.textSecondary } }, activeTask.affectedService || 'Service not set')) : (React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' } },
+                React.createElement("span", { style: { color: theme_1.THEME.colors.textSecondary } }, formatDisplayDate(activeTask.dueDate)),
+                React.createElement("span", { style: { backgroundColor: getPriorityColor(activeTask.priority), color: '#0f172a', borderRadius: '999px', padding: '2px 8px', fontWeight: 600 } }, activeTask.priority))))) : null)));
 };
 exports.default = BoardView;
 //# sourceMappingURL=BoardView.js.map
