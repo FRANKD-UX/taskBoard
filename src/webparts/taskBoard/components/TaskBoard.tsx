@@ -801,8 +801,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                                     backgroundColor: isActive
                                         ? THEME.colors.primary
                                         : isHovered
-                                        ? THEME.colors.primarySoft
-                                        : 'transparent',
+                                            ? THEME.colors.primarySoft
+                                            : 'transparent',
                                     color: isActive ? '#ffffff' : THEME.colors.textPrimary,
                                     border: isActive
                                         ? `1px solid ${THEME.colors.primary}`
@@ -822,9 +822,14 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 </div>
                 <div
                     style={{
-                        transition: 'opacity 180ms ease, transform 180ms ease',
+                        // NOTE: do NOT add transform here.
+                        // CSS transform creates a new containing block for position:fixed
+                        // descendants. DragOverlay uses position:fixed internally — if a
+                        // transform ancestor exists, it positions relative to that element
+                        // instead of the viewport, making the overlay invisible inside the
+                        // overflow:hidden parent. Opacity-only transition avoids this.
+                        transition: 'opacity 180ms ease',
                         opacity: isViewVisible ? 1 : 0,
-                        transform: isViewVisible ? 'translateY(0)' : 'translateY(4px)',
                     }}
                 >
                     {renderTaskWorkspaceView(displayedView)}

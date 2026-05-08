@@ -136,11 +136,11 @@ const AT_RISK_REMAINING_HOURS = 1;
 
 const getSlaStatusColor = (status: string): string => {
     switch (status) {
-        case 'OnTrack':  return '#22c55e';
-        case 'AtRisk':   return '#f59e0b';
+        case 'OnTrack': return '#22c55e';
+        case 'AtRisk': return '#f59e0b';
         case 'Breached': return '#ef4444';
         case 'Resolved': return '#3b82f6';
-        default:         return '#6b7280';
+        default: return '#6b7280';
     }
 };
 
@@ -162,10 +162,10 @@ const computeSlaStatus = (
 const formatCountdown = (ms: number): string => {
     if (ms <= 0) return 'Overdue';
     const totalSeconds = Math.floor(ms / 1000);
-    const hours   = Math.floor(totalSeconds / 3600);
+    const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    if (hours > 0)   return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
     if (minutes > 0) return `${minutes}m ${seconds}s`;
     return `${seconds}s`;
 };
@@ -249,8 +249,8 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
         backgroundColor: isOver
             ? '#e2e8f0'
             : hoveredColumn === status
-            ? '#f1f5f9'
-            : THEME.colors.panel,
+                ? '#f1f5f9'
+                : THEME.colors.panel,
         boxShadow: isOver
             ? 'inset 0 0 0 1px rgba(59,130,246,0.3)'
             : '0 1px 3px rgba(0,0,0,0.05)',
@@ -360,13 +360,16 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
 //
 // useDraggable gives us:
 //   setNodeRef  – attach to the card's root element
-//   listeners   – pointer/keyboard events that activate the drag
-//   attributes  – ARIA attributes for accessibility
-//   transform   – { x, y } pixel offset while dragging (null when not dragging)
+//   listeners   – pointer/keyboard events that activate the drag (on card root)
+//   attributes  – ARIA attributes for accessibility (on card root)
 //
-// We apply transform as a CSS translate so the card moves with the cursor.
-// dnd-kit does NOT move the card in the DOM – we control layout entirely.
-// That is why it cooperates with SharePoint's scroll containers.
+// listeners are placed on the card ROOT (not just the handle) so the entire
+// card surface is a valid drag target — identical to how incidents behave.
+// onClick on child divs still fires correctly because PointerSensor requires
+// 8px of movement before activating a drag, so any stationary press is a click.
+//
+// transform is NOT destructured — DragOverlay handles cursor-following.
+// The card stays in its DOM slot as a faded ghost while dragging.
 
 interface DraggableCardProps {
     task: Task;
@@ -387,44 +390,47 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
     onTaskClick,
     onTaskHover,
 }) => {
-    const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: task.id });
+    // transform is intentionally NOT destructured — we no longer move the card
+    // itself. DragOverlay (portalled to document.body) is the only thing that
+    // follows the cursor. Keeping transform in the destructure caused dnd-kit to
+    // apply internal movement tracking on this node, which conflicted with the
+    // overlay on task cards where the geometry is tighter.
+    const { attributes, listeners, setNodeRef } = useDraggable({ id: task.id });
 
-    const assigneeName    = task.assignedTo || 'Unassigned';
-    const slaLabel        = getSlaLabel(task.severity);
+    const assigneeName = task.assignedTo || 'Unassigned';
+    const slaLabel = getSlaLabel(task.severity);
     const resolutionHours = formatResolutionHours(task.slaResolutionMinutes);
-    const liveStatus      = computeSlaStatus(task.resolutionDueDate, task.slaStatus);
-    const remainingTime   = getRemainingTime(task.resolutionDueDate);
+    const liveStatus = computeSlaStatus(task.resolutionDueDate, task.slaStatus);
+    const remainingTime = getRemainingTime(task.resolutionDueDate);
 
-    // While dragging, we offset the card visually but leave its DOM slot in place.
-    // This avoids the "card disappears" bug from react-beautiful-dnd fighting the
-    // SharePoint scroll container.
+    // While dragging, the card becomes a faded ghost that holds its column slot.
+    // It does NOT translate — DragOverlay (portalled to document.body) is the
+    // floating clone that follows the cursor and paints above all columns.
+    // Removing transform/zIndex/position here is what stops the card from fighting
+    // the overlay and going behind sibling columns.
     const draggingStyle: React.CSSProperties = {
-        position: 'relative',
-        zIndex: 9999,
-        transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
-        willChange: 'transform',
         userSelect: 'none',
         pointerEvents: 'none',
         backgroundColor: THEME.colors.panel,
         borderRadius: '10px',
         padding: '14px',
-        borderLeft: `4px solid ${getStatusColor(status)}`,
-        border: '1px solid #e2e8f0',
+        border: '1px solid #e2e8f0',      // shorthand FIRST
+        borderLeft: `4px solid ${getStatusColor(status)}`,  // then override left
         color: THEME.colors.textPrimary,
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
         cursor: 'grabbing',
-        opacity: 1,
-        boxShadow: '0 10px 20px rgba(0,0,0,0.15), 0 0 0 1px rgba(59,130,246,0.5)',
+        opacity: 0.35,          // ghost — visible but clearly not the "real" card
+        boxShadow: 'none',
     };
 
     const idleStyle: React.CSSProperties = {
         backgroundColor: THEME.colors.panel,
         borderRadius: '10px',
         padding: '14px',
+        border: '1px solid #e2e8f0',      // shorthand FIRST
         borderLeft: `4px solid ${type === 'incident' ? getSeverityColor(task.severity) : getStatusColor(status)}`,
-        border: '1px solid #e2e8f0',
         color: THEME.colors.textPrimary,
         display: 'flex',
         flexDirection: 'column',
@@ -441,18 +447,20 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
     return (
         <div
             ref={setNodeRef}
+            {...listeners}
+            {...attributes}
             style={isBeingDragged ? draggingStyle : idleStyle}
         >
             {/* Drag handle + title row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/*
-                    listeners go on the HANDLE, not the whole card.
-                    This prevents click-to-open from being swallowed by the drag system.
-                    attributes (ARIA) go on the handle too so screen readers understand it.
+                    Handle is visual only — listeners are on the card root so the
+                    entire card surface is a valid drag target (same as incidents).
+                    onClick on child divs still fires correctly because the
+                    PointerSensor activationConstraint distance:8 means any
+                    movement < 8px is treated as a click, not a drag.
                 */}
                 <div
-                    {...listeners}
-                    {...attributes}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -465,7 +473,6 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
                         userSelect: 'none',
                         flexShrink: 0,
                     }}
-                    onMouseDown={(e) => e.stopPropagation()}
                 >
                     :::
                 </div>
@@ -696,7 +703,7 @@ const BoardView: React.FC<IBoardViewProps> = ({
 
         if (!over) return;
 
-        const taskId    = active.id as string;
+        const taskId = active.id as string;
         const newStatus = over.id as WorkItemStatus;
 
         const draggedTask = tasks.find((t) => t.id === taskId);
@@ -710,13 +717,6 @@ const BoardView: React.FC<IBoardViewProps> = ({
     return (
         <DndContext
             sensors={sensors}
-            // pointerWithin: uses the actual cursor position to decide which column
-            // the card is over. This is correct for large rectangular drop zones.
-            //
-            // closestCenter was wrong here — it measures distance from the dragged
-            // item's centre to each droppable's centre, which caused the card to
-            // snap to whichever column centre was geometrically closest at drag
-            // start rather than following where the cursor actually was.
             collisionDetection={pointerWithin}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
@@ -742,8 +742,11 @@ const BoardView: React.FC<IBoardViewProps> = ({
             </div>
 
             {/*
-                DragOverlay portals to document.body — outside every column's
-                overflow-y: auto stacking context — so it always paints on top.
+                DragOverlay uses position:fixed internally and portals to document.body.
+                This works correctly as long as no ancestor has a CSS transform applied —
+                transform creates a new containing block for position:fixed and breaks
+                viewport-relative positioning. The fix lives in TaskBoard.tsx where the
+                animation wrapper's transform has been removed.
             */}
             <DragOverlay dropAnimation={null}>
                 {activeTask ? (
@@ -757,11 +760,10 @@ const BoardView: React.FC<IBoardViewProps> = ({
                             // border shorthand must come BEFORE borderLeft, otherwise
                             // border resets all sides and wipes out the left accent.
                             border: '1px solid #e2e8f0',
-                            borderLeft: `4px solid ${
-                                type === 'incident'
+                            borderLeft: `4px solid ${type === 'incident'
                                     ? getSeverityColor(activeTask.severity)
                                     : getStatusColor(activeTask.status as WorkItemStatus)
-                            }`,
+                                }`,
                             color: THEME.colors.textPrimary,
                             display: 'flex',
                             flexDirection: 'column',

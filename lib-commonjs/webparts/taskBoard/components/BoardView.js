@@ -227,41 +227,44 @@ var DroppableColumn = function (_a) {
 };
 var DraggableCard = function (_a) {
     var task = _a.task, type = _a.type, status = _a.status, isBeingDragged = _a.isBeingDragged, isHovered = _a.isHovered, onTaskClick = _a.onTaskClick, onTaskHover = _a.onTaskHover;
-    var _b = (0, core_2.useDraggable)({ id: task.id }), attributes = _b.attributes, listeners = _b.listeners, setNodeRef = _b.setNodeRef, transform = _b.transform;
+    // transform is intentionally NOT destructured — we no longer move the card
+    // itself. DragOverlay (portalled to document.body) is the only thing that
+    // follows the cursor. Keeping transform in the destructure caused dnd-kit to
+    // apply internal movement tracking on this node, which conflicted with the
+    // overlay on task cards where the geometry is tighter.
+    var _b = (0, core_2.useDraggable)({ id: task.id }), attributes = _b.attributes, listeners = _b.listeners, setNodeRef = _b.setNodeRef;
     var assigneeName = task.assignedTo || 'Unassigned';
     var slaLabel = getSlaLabel(task.severity);
     var resolutionHours = formatResolutionHours(task.slaResolutionMinutes);
     var liveStatus = computeSlaStatus(task.resolutionDueDate, task.slaStatus);
     var remainingTime = getRemainingTime(task.resolutionDueDate);
-    // While dragging, we offset the card visually but leave its DOM slot in place.
-    // This avoids the "card disappears" bug from react-beautiful-dnd fighting the
-    // SharePoint scroll container.
+    // While dragging, the card becomes a faded ghost that holds its column slot.
+    // It does NOT translate — DragOverlay (portalled to document.body) is the
+    // floating clone that follows the cursor and paints above all columns.
+    // Removing transform/zIndex/position here is what stops the card from fighting
+    // the overlay and going behind sibling columns.
     var draggingStyle = {
-        position: 'relative',
-        zIndex: 9999,
-        transform: transform ? "translate(".concat(transform.x, "px, ").concat(transform.y, "px)") : undefined,
-        willChange: 'transform',
         userSelect: 'none',
         pointerEvents: 'none',
         backgroundColor: theme_1.THEME.colors.panel,
         borderRadius: '10px',
         padding: '14px',
-        borderLeft: "4px solid ".concat(getStatusColor(status)),
-        border: '1px solid #e2e8f0',
+        border: '1px solid #e2e8f0', // shorthand FIRST
+        borderLeft: "4px solid ".concat(getStatusColor(status)), // then override left
         color: theme_1.THEME.colors.textPrimary,
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
         cursor: 'grabbing',
-        opacity: 1,
-        boxShadow: '0 10px 20px rgba(0,0,0,0.15), 0 0 0 1px rgba(59,130,246,0.5)',
+        opacity: 0.35, // ghost — visible but clearly not the "real" card
+        boxShadow: 'none',
     };
     var idleStyle = {
         backgroundColor: theme_1.THEME.colors.panel,
         borderRadius: '10px',
         padding: '14px',
+        border: '1px solid #e2e8f0', // shorthand FIRST
         borderLeft: "4px solid ".concat(type === 'incident' ? getSeverityColor(task.severity) : getStatusColor(status)),
-        border: '1px solid #e2e8f0',
         color: theme_1.THEME.colors.textPrimary,
         display: 'flex',
         flexDirection: 'column',
@@ -274,9 +277,9 @@ var DraggableCard = function (_a) {
             : '0 2px 6px rgba(0,0,0,0.05)',
         transition: 'box-shadow 160ms ease',
     };
-    return (React.createElement("div", { ref: setNodeRef, style: isBeingDragged ? draggingStyle : idleStyle },
+    return (React.createElement("div", tslib_1.__assign({ ref: setNodeRef }, listeners, attributes, { style: isBeingDragged ? draggingStyle : idleStyle }),
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-            React.createElement("div", tslib_1.__assign({}, listeners, attributes, { style: {
+            React.createElement("div", { style: {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -287,7 +290,7 @@ var DraggableCard = function (_a) {
                     fontSize: '16px',
                     userSelect: 'none',
                     flexShrink: 0,
-                }, onMouseDown: function (e) { return e.stopPropagation(); } }), ":::"),
+                } }, ":::"),
             React.createElement("div", { onClick: function () { return onTaskClick(task); }, onMouseEnter: function () { return onTaskHover(task.id); }, onMouseLeave: function () { return onTaskHover(null); }, style: {
                     flex: 1,
                     display: 'flex',
@@ -420,15 +423,7 @@ var BoardView = function (_a) {
             return;
         onTaskStatusChange(taskId, newStatus);
     };
-    return (React.createElement(core_1.DndContext, { sensors: sensors, 
-        // pointerWithin: uses the actual cursor position to decide which column
-        // the card is over. This is correct for large rectangular drop zones.
-        //
-        // closestCenter was wrong here — it measures distance from the dragged
-        // item's centre to each droppable's centre, which caused the card to
-        // snap to whichever column centre was geometrically closest at drag
-        // start rather than following where the cursor actually was.
-        collisionDetection: core_1.pointerWithin, onDragStart: handleDragStart, onDragEnd: handleDragEnd },
+    return (React.createElement(core_1.DndContext, { sensors: sensors, collisionDetection: core_1.pointerWithin, onDragStart: handleDragStart, onDragEnd: handleDragEnd },
         React.createElement("div", { style: boardOuterStyle },
             React.createElement("div", { style: boardColumnsRowStyle }, statuses.map(function (status) {
                 var _a;
