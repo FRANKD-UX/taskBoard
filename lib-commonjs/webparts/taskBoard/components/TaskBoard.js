@@ -217,15 +217,17 @@ var TaskBoard = function (_a) {
     var _f = (0, react_1.useState)('board'), displayedView = _f[0], setDisplayedView = _f[1];
     var _g = (0, react_1.useState)(true), isViewVisible = _g[0], setIsViewVisible = _g[1];
     var _h = (0, react_1.useState)(null), hoveredTab = _h[0], setHoveredTab = _h[1];
-    var _j = (0, react_1.useState)(false), canAssign = _j[0], setCanAssign = _j[1];
-    var _k = (0, react_1.useState)(''), currentUserName = _k[0], setCurrentUserName = _k[1];
-    var _l = (0, react_1.useState)(''), currentUserEmail = _l[0], setCurrentUserEmail = _l[1];
-    var _m = (0, react_1.useState)(null), currentUserSpId = _m[0], setCurrentUserSpId = _m[1];
-    var _o = (0, react_1.useState)(true), isLoading = _o[0], setIsLoading = _o[1];
-    var _p = (0, react_1.useState)(''), currentUserRole = _p[0], setCurrentUserRole = _p[1];
-    var _q = (0, react_1.useState)(''), currentUserDepartment = _q[0], setCurrentUserDepartment = _q[1];
-    var _r = (0, react_1.useState)(false), canAssignAcrossDepartments = _r[0], setCanAssignAcrossDepartments = _r[1];
-    var _s = (0, react_1.useState)(false), isDepartmentLead = _s[0], setIsDepartmentLead = _s[1];
+    var _j = (0, react_1.useState)('Support'), selectedIncidentDepartment = _j[0], setSelectedIncidentDepartment = _j[1];
+    var _k = (0, react_1.useState)(null), hoveredIncidentDepartmentTab = _k[0], setHoveredIncidentDepartmentTab = _k[1];
+    var _l = (0, react_1.useState)(false), canAssign = _l[0], setCanAssign = _l[1];
+    var _m = (0, react_1.useState)(''), currentUserName = _m[0], setCurrentUserName = _m[1];
+    var _o = (0, react_1.useState)(''), currentUserEmail = _o[0], setCurrentUserEmail = _o[1];
+    var _p = (0, react_1.useState)(null), currentUserSpId = _p[0], setCurrentUserSpId = _p[1];
+    var _q = (0, react_1.useState)(true), isLoading = _q[0], setIsLoading = _q[1];
+    var _r = (0, react_1.useState)(''), currentUserRole = _r[0], setCurrentUserRole = _r[1];
+    var _s = (0, react_1.useState)(''), currentUserDepartment = _s[0], setCurrentUserDepartment = _s[1];
+    var _t = (0, react_1.useState)(false), canAssignAcrossDepartments = _t[0], setCanAssignAcrossDepartments = _t[1];
+    var _u = (0, react_1.useState)(false), isDepartmentLead = _u[0], setIsDepartmentLead = _u[1];
     var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
     var incidentUserContext = (0, react_1.useMemo)(function () { return ({
         id: currentUserSpId,
@@ -244,6 +246,8 @@ var TaskBoard = function (_a) {
     ]);
     var taskItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'task'; }); }, [workItems]);
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
+    var visibleIncidentItems = (0, react_1.useMemo)(function () { return IncidentVisibilityService_1.IncidentVisibilityService.filterVisibleIncidents(incidentItems, incidentUserContext); }, [incidentItems, incidentUserContext]);
+    var selectedDepartmentIncidentItems = (0, react_1.useMemo)(function () { return visibleIncidentItems.filter(function (item) { return item.department === selectedIncidentDepartment; }); }, [visibleIncidentItems, selectedIncidentDepartment]);
     // -----------------------------------------------------------------------
     // Initialisation
     // -----------------------------------------------------------------------
@@ -321,15 +325,17 @@ var TaskBoard = function (_a) {
         });
     }); }, []);
     var filterVisibleTasks = function (allTasks, userId, userContext) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var collaborationTaskIds;
+        var collaborationTaskIds, visibleIncidents, visibleIncidentIds;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0: return [4 /*yield*/, fetchCollaborationTaskIds(userId)];
                 case 1:
                     collaborationTaskIds = _a.sent();
+                    visibleIncidents = IncidentVisibilityService_1.IncidentVisibilityService.filterVisibleIncidents(allTasks.filter(function (task) { return task.type === 'incident'; }), userContext);
+                    visibleIncidentIds = new Set(visibleIncidents.map(function (incident) { return incident.id; }));
                     return [2 /*return*/, allTasks.filter(function (task) {
                             if (task.type === 'incident') {
-                                return IncidentVisibilityService_1.IncidentVisibilityService.canViewIncident(userContext, task);
+                                return visibleIncidentIds.has(task.id);
                             }
                             return (task.authorId === userId ||
                                 task.assignedToId === userId ||
@@ -952,7 +958,34 @@ var TaskBoard = function (_a) {
                     borderRadius: '16px',
                     overflow: 'hidden',
                 } },
-                React.createElement(BoardView_1.default, { tasks: incidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask, onTaskStatusChange: handleTaskStatusChange }))));
+                React.createElement("div", { style: {
+                        display: 'flex',
+                        gap: '4px',
+                        padding: '12px 16px 0 16px',
+                        backgroundColor: theme_1.THEME.colors.panel,
+                        borderBottom: "1px solid ".concat(theme_1.THEME.colors.border),
+                    } }, IncidentDepartmentRules_1.ALLOWED_TASK_DEPARTMENTS.map(function (department) {
+                    var isActive = selectedIncidentDepartment === department;
+                    var isHovered = hoveredIncidentDepartmentTab === department;
+                    return (React.createElement("button", { key: department, type: "button", onClick: function () { return setSelectedIncidentDepartment(department); }, onMouseEnter: function () { return setHoveredIncidentDepartmentTab(department); }, onMouseLeave: function () { return setHoveredIncidentDepartmentTab(null); }, style: {
+                            backgroundColor: isActive
+                                ? theme_1.THEME.colors.primary
+                                : isHovered
+                                    ? theme_1.THEME.colors.primarySoft
+                                    : 'transparent',
+                            color: isActive ? '#ffffff' : theme_1.THEME.colors.textPrimary,
+                            border: isActive
+                                ? "1px solid ".concat(theme_1.THEME.colors.primary)
+                                : '1px solid transparent',
+                            borderRadius: '8px',
+                            padding: '8px 14px',
+                            cursor: 'pointer',
+                            fontWeight: isActive ? 700 : 500,
+                            fontSize: '14px',
+                            transition: 'background-color 160ms ease, color 160ms ease',
+                        } }, department));
+                })),
+                React.createElement(BoardView_1.default, { tasks: selectedDepartmentIncidentItems, statuses: INCIDENT_STATUSES, type: "incident", onTaskClick: handleTaskClick, onNewTask: handleNewTask, onTaskStatusChange: handleTaskStatusChange }))));
     };
     var renderReportsView = function () { return (React.createElement("div", { style: { display: 'grid', gap: '16px' } },
         renderWorkspaceHeader('Reports', 'Embedded Power BI reports for operational analytics and performance tracking.'),
