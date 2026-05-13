@@ -26,6 +26,10 @@ const DEPARTMENT_ALIAS_MAP: Record<string, TaskDepartment> = {
 
 const VALID_INCIDENT_SEVERITIES: readonly IncidentSeverity[] = ['P1', 'P2', 'P3', 'P4'] as const;
 
+const normalizeDepartmentKey = (department?: string): string => {
+    return (department ?? '').toLowerCase().trim();
+};
+
 export const DEPARTMENT_RULES: IncidentDepartmentRuleMap = {
     Support: {
         requiresSite: false,
@@ -50,14 +54,14 @@ export const DEPARTMENT_RULES: IncidentDepartmentRuleMap = {
 } as const;
 
 export const isDepartmentSupported = (department?: string): department is TaskDepartment => {
-    if (!department) return false;
-    const normalized = department.toLowerCase().trim();
+    const normalized = normalizeDepartmentKey(department);
+    if (!normalized) return false;
     return Boolean(DEPARTMENT_ALIAS_MAP[normalized]);
 };
 
 export const normalizeDepartment = (department?: string): TaskDepartment => {
-    if (!department) return 'Support';
-    const normalized = department.toLowerCase().trim();
+    const normalized = normalizeDepartmentKey(department);
+    if (!normalized) return 'Support';
     const mapped = DEPARTMENT_ALIAS_MAP[normalized];
     return mapped ?? 'Support';
 };

@@ -2,11 +2,10 @@ import type { IncidentSeverity, TaskDepartment } from '../../webparts/taskBoard/
 import type { IUserRole } from '../UserRoleService';
 import { findIncidentCatalogEntry } from './IncidentCatalog';
 import {
-    getDepartmentRule,
     isDepartmentSupported,
     normalizeDepartment,
     normalizeIncidentSeverity,
-    requiresSite as requiresSiteForDepartment,
+    requiresSite as requiresSiteByDepartment,
 } from './IncidentDepartmentRules';
 
 export interface IIncidentUserContext extends Pick<IUserRole, 'role' | 'department' | 'email' | 'canAssign' | 'canAssignAcrossDepartments' | 'isDepartmentLead'> {
@@ -152,10 +151,13 @@ export const canClaimIncident = (
 export const canCreateIncident = (
     user: IIncidentUserContext,
     department?: string,
-    _incidentTypeTitle?: string
+    incidentTypeTitle?: string
 ): boolean => {
     const actorId = getUserId(user);
     if (actorId === null || !department) return false;
+    if (incidentTypeTitle && !findIncidentCatalogEntry(department, incidentTypeTitle)) {
+        return false;
+    }
     if (isSameDepartment(user.department, department)) return true;
     return hasCrossDepartmentAssignmentPermission(user);
 };
@@ -191,7 +193,7 @@ export const requiresSite = (input: IncidentSiteRequirementInput): boolean => {
     const department = resolveDepartmentFromInput(input);
     if (!department) return false;
 
-    if (requiresSiteForDepartment(department)) {
+    if (requiresSiteByDepartment(department)) {
         return true;
     }
 
@@ -202,7 +204,7 @@ export const requiresSite = (input: IncidentSiteRequirementInput): boolean => {
         }
     }
 
-    return getDepartmentRule(department).requiresSite;
+    return false;
 };
 
 export const IncidentPolicy = {
