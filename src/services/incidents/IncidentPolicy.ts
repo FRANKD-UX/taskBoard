@@ -32,7 +32,7 @@ export interface IIncidentPolicyInput {
 export type IncidentSiteRequirementInput =
     | TaskDepartment
     | string
-    | Pick<IIncidentPolicyInput, 'department' | 'incidentTypeTitle'>
+    | IIncidentPolicyInput
     | null
     | undefined;
 
