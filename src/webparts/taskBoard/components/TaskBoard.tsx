@@ -13,6 +13,7 @@ import TableView from './TableView';
 import type {
     IncidentStatus,
     Task,
+    TaskDepartment,
     TaskPriority,
     TaskRequestType,
     TaskSite,
@@ -31,7 +32,7 @@ import { CollaboratorService } from '../../../services/CollaboratorService';
 import { IncidentVisibilityService } from '../../../services/incidents/IncidentVisibilityService';
 import { IncidentAssignmentService } from '../../../services/incidents/IncidentAssignmentService';
 import { IncidentPolicy, type IIncidentUserContext } from '../../../services/incidents/IncidentPolicy';
-import { normalizeDepartment } from '../../../services/incidents/IncidentDepartmentRules';
+import { ALLOWED_TASK_DEPARTMENTS, normalizeDepartment } from '../../../services/incidents/IncidentDepartmentRules';
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
@@ -193,6 +194,8 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const [displayedView, setDisplayedView] = useState<ViewKey>('board');
     const [isViewVisible, setIsViewVisible] = useState<boolean>(true);
     const [hoveredTab, setHoveredTab] = useState<ViewKey | null>(null);
+    const [selectedIncidentDepartment, setSelectedIncidentDepartment] = useState<TaskDepartment>('Support');
+    const [hoveredIncidentDepartmentTab, setHoveredIncidentDepartmentTab] = useState<TaskDepartment | null>(null);
     const [canAssign, setCanAssign] = useState<boolean>(false);
     const [currentUserName, setCurrentUserName] = useState<string>('');
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
@@ -225,6 +228,14 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const taskItems = useMemo(() => workItems.filter((item) => item.type === 'task'), [workItems]);
     const incidentItems = useMemo(() => workItems.filter((item) => item.type === 'incident'), [workItems]);
+    const visibleIncidentItems = useMemo(
+        () => IncidentVisibilityService.filterVisibleIncidents(incidentItems, incidentUserContext),
+        [incidentItems, incidentUserContext]
+    );
+    const selectedDepartmentIncidentItems = useMemo(
+        () => visibleIncidentItems.filter((item) => item.department === selectedIncidentDepartment),
+        [visibleIncidentItems, selectedIncidentDepartment]
+    );
 
     // -----------------------------------------------------------------------
     // Initialisation
@@ -305,10 +316,15 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
         userContext: IIncidentUserContext
     ): Promise<Task[]> => {
         const collaborationTaskIds = await fetchCollaborationTaskIds(userId);
+        const visibleIncidents = IncidentVisibilityService.filterVisibleIncidents(
+            allTasks.filter((task) => task.type === 'incident'),
+            userContext
+        );
+        const visibleIncidentIds = new Set(visibleIncidents.map((incident) => incident.id));
 
         return allTasks.filter((task) => {
             if (task.type === 'incident') {
-                return IncidentVisibilityService.canViewIncident(userContext, task);
+                return visibleIncidentIds.has(task.id);
             }
             return (
                 task.authorId === userId ||
@@ -1041,8 +1057,50 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                         overflow: 'hidden',
                     }}
                 >
+                    <div
+                        style={{
+                            display: 'flex',
+                            gap: '4px',
+                            padding: '12px 16px 0 16px',
+                            backgroundColor: THEME.colors.panel,
+                            borderBottom: `1px solid ${THEME.colors.border}`,
+                        }}
+                    >
+                        {ALLOWED_TASK_DEPARTMENTS.map((department) => {
+                            const isActive = selectedIncidentDepartment === department;
+                            const isHovered = hoveredIncidentDepartmentTab === department;
+                            return (
+                                <button
+                                    key={department}
+                                    type="button"
+                                    onClick={() => setSelectedIncidentDepartment(department)}
+                                    onMouseEnter={() => setHoveredIncidentDepartmentTab(department)}
+                                    onMouseLeave={() => setHoveredIncidentDepartmentTab(null)}
+                                    style={{
+                                        backgroundColor: isActive
+                                            ? THEME.colors.primary
+                                            : isHovered
+                                                ? THEME.colors.primarySoft
+                                                : 'transparent',
+                                        color: isActive ? '#ffffff' : THEME.colors.textPrimary,
+                                        border: isActive
+                                            ? `1px solid ${THEME.colors.primary}`
+                                            : '1px solid transparent',
+                                        borderRadius: '8px',
+                                        padding: '8px 14px',
+                                        cursor: 'pointer',
+                                        fontWeight: isActive ? 700 : 500,
+                                        fontSize: '14px',
+                                        transition: 'background-color 160ms ease, color 160ms ease',
+                                    }}
+                                >
+                                    {department}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <BoardView
-                        tasks={incidentItems}
+                        tasks={selectedDepartmentIncidentItems}
                         statuses={INCIDENT_STATUSES}
                         type="incident"
                         onTaskClick={handleTaskClick}
