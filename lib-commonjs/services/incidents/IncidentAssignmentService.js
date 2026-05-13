@@ -23,5 +23,11 @@ exports.IncidentAssignmentService = {
             site: incident.site,
         });
     },
+    canAssignToUser: function (user, incident, targetUser) {
+        return this.canAssignIncident(user, incident, targetUser);
+    },
+    canClaimSelf: function (user, incident) {
+        return this.canClaimIncident(user, incident);
+    },
 };
 //# sourceMappingURL=IncidentAssignmentService.js.map

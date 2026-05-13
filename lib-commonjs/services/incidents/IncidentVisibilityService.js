@@ -10,9 +10,10 @@ exports.IncidentVisibilityService = {
             severity: incident.severity,
             assignedToId: (_a = incident.assignedToId) !== null && _a !== void 0 ? _a : null,
             incidentTypeTitle: (_b = incident.incidentType) === null || _b === void 0 ? void 0 : _b.title,
+            site: incident.site,
         });
     },
-    filterVisibleIncidents: function (incidents, user) {
+    filterVisibleIncidents: function (user, incidents) {
         var _this = this;
         return incidents.filter(function (incident) { return _this.canViewIncident(user, incident); });
     },

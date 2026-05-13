@@ -46,7 +46,16 @@ export type TaskSite =
     | 'Albertsdal'
     | 'Troyville';
 
-export type CollaborationStatus = 'Pending' | 'Accepted' | 'Declined';
+export type CollaborationStatus =
+    | 'Pending'
+    | 'Accepted'
+    | 'Declined';
+
+export type IncidentSlaStatus =
+    | 'OnTrack'
+    | 'AtRisk'
+    | 'Breached'
+    | 'Resolved';
 
 export interface ICollaborator {
     id: number | null;
@@ -59,11 +68,9 @@ export interface IIncidentType {
     id: number;
     title: string;
     severity: IncidentSeverity;
-    department?: string;
+    department?: TaskDepartment | string;
     isActive?: boolean;
 }
-
-export type IncidentSlaStatus = 'OnTrack' | 'AtRisk' | 'Breached' | 'Resolved';
 
 export interface ICollaborationRequest {
     requestId: number;
@@ -104,13 +111,14 @@ export interface Task {
 
     description?: string;
     createdBy?: string;
-    authorId?: number | null;           // <-- ADDED
+    authorId?: number | null;
 
     severity?: IncidentSeverity;
     impact?: string;
     affectedService?: string;
     incidentTypeId?: number | null;
     incidentType?: IIncidentType | null;
+
     slaResponseMinutes?: number;
     slaResolutionMinutes?: number;
     responseDueDate?: string;
@@ -148,13 +156,14 @@ export interface ITask {
     requestType: TaskRequestType;
     department: TaskDepartment;
     createdBy?: string;
-    authorId?: number | null;           // <-- ADDED
+    authorId?: number | null;
 
     severity?: IncidentSeverity;
     impact?: string;
     affectedService?: string;
     incidentTypeId?: number | null;
     incidentType?: IIncidentType | null;
+
     slaResponseMinutes?: number;
     slaResolutionMinutes?: number;
     responseDueDate?: string;

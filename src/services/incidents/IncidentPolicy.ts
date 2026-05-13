@@ -1,6 +1,14 @@
-import type { IncidentSeverity, TaskDepartment } from '../../webparts/taskBoard/components/TaskTypes';
+import type {
+    IncidentSeverity,
+    TaskDepartment,
+} from '../../webparts/taskBoard/components/TaskTypes';
 import { findIncidentCatalogEntry } from './IncidentCatalog';
-import { normalizeDepartment, normalizeIncidentSeverity, requiresSiteForDepartment } from './IncidentDepartmentRules';
+import {
+    isDepartmentSupported,
+    normalizeDepartment,
+    normalizeIncidentSeverity,
+    requiresSiteForDepartment,
+} from './IncidentDepartmentRules';
 
 export interface IIncidentUserContext {
     id: number | null;
@@ -25,7 +33,11 @@ export interface IIncidentPolicyInput {
 }
 
 const isManagerOrLead = (user: IIncidentUserContext): boolean => {
-    return user.role === 'Manager' || user.role === 'TeamLead' || user.isDepartmentLead === true;
+    return (
+        user.role === 'Manager' ||
+        user.role === 'TeamLead' ||
+        user.isDepartmentLead === true
+    );
 };
 
 const isOwnerOrManager = (user: IIncidentUserContext): boolean => {
@@ -36,12 +48,24 @@ const hasCrossDepartmentAccess = (user: IIncidentUserContext): boolean => {
     return user.canAssignAcrossDepartments === true;
 };
 
-const isSameDepartment = (userDepartment?: string, incidentDepartment?: string): boolean => {
+const isSameDepartment = (
+    userDepartment?: string,
+    incidentDepartment?: string
+): boolean => {
     return normalizeDepartment(userDepartment) === normalizeDepartment(incidentDepartment);
 };
 
-const getSeverity = (incident: IIncidentPolicyInput): IncidentSeverity | null => {
+const getSeverity = (
+    incident: IIncidentPolicyInput
+): IncidentSeverity | null => {
     return normalizeIncidentSeverity(incident.severity);
+};
+
+const isAssignedToUser = (
+    user: IIncidentUserContext,
+    incident: IIncidentPolicyInput
+): boolean => {
+    return Boolean(user.id && incident.assignedToId === user.id);
 };
 
 export const canViewIncident = (
@@ -49,19 +73,22 @@ export const canViewIncident = (
     incident: IIncidentPolicyInput
 ): boolean => {
     if (!user?.id) return false;
-    if (incident.assignedToId === user.id) return true;
+
+    if (isAssignedToUser(user, incident)) return true;
+
     if (hasCrossDepartmentAccess(user)) return true;
 
     const severity = getSeverity(incident);
     const sameDepartment = isSameDepartment(user.department, incident.department);
 
+    if (!sameDepartment) return false;
+
     if (severity === 'P1') {
-        if (sameDepartment && isManagerOrLead(user)) return true;
-        return false;
+        return isManagerOrLead(user);
     }
 
     if (severity === 'P2' || severity === 'P3' || severity === 'P4') {
-        return sameDepartment;
+        return true;
     }
 
     return false;
@@ -72,8 +99,9 @@ export const canAssignIncident = (
     incident: IIncidentPolicyInput,
     targetUser?: IIncidentTargetUser | null
 ): boolean => {
-    if (!user?.id || user.canAssign !== true) return false;
-    if (!targetUser || targetUser.id === null) return false;
+    if (!user?.id) return false;
+    if (user.canAssign !== true) return false;
+    if (!targetUser?.id) return false;
 
     if (targetUser.id === user.id) {
         return canClaimIncident(user, incident);
@@ -83,10 +111,11 @@ export const canAssignIncident = (
     const actorDepartment = normalizeDepartment(user.department);
     const targetDepartment = targetUser.department
         ? normalizeDepartment(targetUser.department)
-        : incidentDepartment;
+        : undefined;
 
     const sameDepartmentAssignment =
-        actorDepartment === incidentDepartment && targetDepartment === incidentDepartment;
+        actorDepartment === incidentDepartment &&
+        targetDepartment === incidentDepartment;
 
     if (sameDepartmentAssignment) {
         return isManagerOrLead(user) || user.role === 'Owner';
@@ -100,18 +129,37 @@ export const canClaimIncident = (
     incident: IIncidentPolicyInput
 ): boolean => {
     if (!user?.id) return false;
-    if (incident.assignedToId && incident.assignedToId !== user.id) return false;
+
+    if (incident.assignedToId && incident.assignedToId !== user.id) {
+        return false;
+    }
+
     if (hasCrossDepartmentAccess(user)) return true;
-    return isSameDepartment(user.department, incident.department);
+
+    const severity = getSeverity(incident);
+    const sameDepartment = isSameDepartment(user.department, incident.department);
+
+    if (!sameDepartment) return false;
+
+    if (severity === 'P1') {
+        return isManagerOrLead(user);
+    }
+
+    if (severity === 'P2' || severity === 'P3' || severity === 'P4') {
+        return true;
+    }
+
+    return false;
 };
 
 export const canCreateIncident = (
     user: IIncidentUserContext,
     department?: string
 ): boolean => {
-    if (!user?.id || !department) return false;
-    if (isSameDepartment(user.department, department)) return true;
-    return hasCrossDepartmentAccess(user);
+    if (!user?.id) return false;
+    if (!department) return false;
+
+    return isDepartmentSupported(department);
 };
 
 export const canEditIncident = (
@@ -119,15 +167,28 @@ export const canEditIncident = (
     incident: IIncidentPolicyInput
 ): boolean => {
     if (!user?.id) return false;
-    if (incident.assignedToId === user.id) return true;
+
+    if (isAssignedToUser(user, incident)) return true;
+
     if (hasCrossDepartmentAccess(user)) return true;
+
     return isSameDepartment(user.department, incident.department) && isManagerOrLead(user);
 };
 
-export const requiresSite = (incident: IIncidentPolicyInput): boolean => {
+export const requiresSite = (
+    incident: IIncidentPolicyInput
+): boolean => {
     const department: TaskDepartment = normalizeDepartment(incident.department);
-    if (requiresSiteForDepartment(department)) return true;
-    const catalogEntry = findIncidentCatalogEntry(department, incident.incidentTypeTitle);
+
+    if (requiresSiteForDepartment(department)) {
+        return true;
+    }
+
+    const catalogEntry = findIncidentCatalogEntry(
+        department,
+        incident.incidentTypeTitle
+    );
+
     return catalogEntry?.requiresSite === true;
 };
 

@@ -1,5 +1,7 @@
-import type { IncidentSeverity, TaskDepartment } from '../../webparts/taskBoard/components/TaskTypes';
-import { normalizeDepartment } from './IncidentDepartmentRules';
+import type {
+    IncidentSeverity,
+    TaskDepartment,
+} from '../../webparts/taskBoard/components/TaskTypes';
 
 export interface IIncidentCatalogItem {
     title: string;
@@ -7,7 +9,9 @@ export interface IIncidentCatalogItem {
     requiresSite?: boolean;
 }
 
-export const INCIDENT_CATALOG: Record<TaskDepartment, readonly IIncidentCatalogItem[]> = {
+export type IncidentCatalog = Record<TaskDepartment, readonly IIncidentCatalogItem[]>;
+
+export const INCIDENT_CATALOG: IncidentCatalog = {
     Support: [
         { title: 'Misdirected client', severity: 'P4' },
         { title: 'Incomplete escalation', severity: 'P1' },
@@ -16,6 +20,7 @@ export const INCIDENT_CATALOG: Record<TaskDepartment, readonly IIncidentCatalogI
         { title: 'Tech request update', severity: 'P1' },
         { title: 'VIP client is down', severity: 'P1' },
     ],
+
     IT: [
         { title: 'No internet on site', severity: 'P1', requiresSite: true },
         { title: 'Internal systems down', severity: 'P1' },
@@ -24,29 +29,47 @@ export const INCIDENT_CATALOG: Record<TaskDepartment, readonly IIncidentCatalogI
         { title: 'Hardware issues', severity: 'P3' },
         { title: 'Set up laptop for new employee', severity: 'P2' },
     ],
+
     Accounts: [
         { title: "PPP's", severity: 'P1' },
         { title: 'Payment allocation', severity: 'P3' },
         { title: 'Payment arrangements', severity: 'P4' },
         { title: 'Update clients details', severity: 'P3' },
     ],
+
     Operations: [
         { title: 'Tech request', severity: 'P1' },
     ],
+
     Complaints: [],
 } as const;
 
-export const findIncidentCatalogEntry = (
-    department?: string,
-    title?: string
-): IIncidentCatalogItem | null => {
-    if (!department || !title) return null;
-    const normalizedDepartment = normalizeDepartment(department);
-    const normalizedTitle = title.trim().toLowerCase();
-    return INCIDENT_CATALOG[normalizedDepartment].find((item) => item.title.trim().toLowerCase() === normalizedTitle) ?? null;
+const normalizeText = (value?: string): string => {
+    return (value ?? '').trim().toLowerCase();
 };
 
-export const isIncidentTitleAllowedForDepartment = (department?: string, title?: string): boolean => {
-    if (!department || !title) return false;
-    return Boolean(findIncidentCatalogEntry(department, title));
+export const getIncidentCatalogForDepartment = (
+    department: TaskDepartment
+): readonly IIncidentCatalogItem[] => {
+    return INCIDENT_CATALOG[department];
+};
+
+export const findIncidentCatalogEntry = (
+    department: TaskDepartment,
+    title?: string
+): IIncidentCatalogItem | null => {
+    const normalizedTitle = normalizeText(title);
+
+    if (!normalizedTitle) return null;
+
+    return INCIDENT_CATALOG[department].find(
+        (item) => normalizeText(item.title) === normalizedTitle
+    ) ?? null;
+};
+
+export const isIncidentTitleAllowedForDepartment = (
+    department: TaskDepartment,
+    title?: string
+): boolean => {
+    return findIncidentCatalogEntry(department, title) !== null;
 };

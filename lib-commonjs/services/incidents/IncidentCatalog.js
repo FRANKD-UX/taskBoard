@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIncidentTitleAllowedForDepartment = exports.findIncidentCatalogEntry = exports.INCIDENT_CATALOG = void 0;
-var IncidentDepartmentRules_1 = require("./IncidentDepartmentRules");
+exports.isIncidentTitleAllowedForDepartment = exports.findIncidentCatalogEntry = exports.getIncidentCatalogForDepartment = exports.INCIDENT_CATALOG = void 0;
 exports.INCIDENT_CATALOG = {
     Support: [
         { title: 'Misdirected client', severity: 'P4' },
@@ -30,19 +29,23 @@ exports.INCIDENT_CATALOG = {
     ],
     Complaints: [],
 };
+var normalizeText = function (value) {
+    return (value !== null && value !== void 0 ? value : '').trim().toLowerCase();
+};
+var getIncidentCatalogForDepartment = function (department) {
+    return exports.INCIDENT_CATALOG[department];
+};
+exports.getIncidentCatalogForDepartment = getIncidentCatalogForDepartment;
 var findIncidentCatalogEntry = function (department, title) {
     var _a;
-    if (!department || !title)
+    var normalizedTitle = normalizeText(title);
+    if (!normalizedTitle)
         return null;
-    var normalizedDepartment = (0, IncidentDepartmentRules_1.normalizeDepartment)(department);
-    var normalizedTitle = title.trim().toLowerCase();
-    return (_a = exports.INCIDENT_CATALOG[normalizedDepartment].find(function (item) { return item.title.trim().toLowerCase() === normalizedTitle; })) !== null && _a !== void 0 ? _a : null;
+    return (_a = exports.INCIDENT_CATALOG[department].find(function (item) { return normalizeText(item.title) === normalizedTitle; })) !== null && _a !== void 0 ? _a : null;
 };
 exports.findIncidentCatalogEntry = findIncidentCatalogEntry;
 var isIncidentTitleAllowedForDepartment = function (department, title) {
-    if (!department || !title)
-        return false;
-    return Boolean((0, exports.findIncidentCatalogEntry)(department, title));
+    return (0, exports.findIncidentCatalogEntry)(department, title) !== null;
 };
 exports.isIncidentTitleAllowedForDepartment = isIncidentTitleAllowedForDepartment;
 //# sourceMappingURL=IncidentCatalog.js.map

@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TaskService = void 0;
 var tslib_1 = require("tslib");
-// TaskService.ts
 require("@pnp/sp/fields");
 var pnpjsConfig_1 = require("../pnpjsConfig");
 var CollaboratorService_1 = require("./CollaboratorService");
@@ -23,9 +22,9 @@ var INCIDENT_LOG_WORKITEM_FIELD_CANDIDATES = ['WorkItemId', 'Work Item', 'WorkIt
 var INCIDENT_LOG_ACTION_FIELD_CANDIDATES = ['Action'];
 var INCIDENT_LOG_FIELDNAME_FIELD_CANDIDATES = ['FieldName', 'Field Name'];
 var INCIDENT_LOG_OLDVALUE_FIELD_CANDIDATES = ['OldValue', 'Old Value'];
+var INCIDENT_LOG_NEWVALUE_FIELD_CANDIDATES = ['NewValue', 'New Value'];
 var INCIDENT_LOG_TIMESTAMP_FIELD_CANDIDATES = ['Timestamp'];
 var INCIDENT_LOG_PERFORMEDBY_FIELD_CANDIDATES = ['PerformedBy', 'Performed By'];
-var INCIDENT_LOG_NEWVALUE_FIELD_CANDIDATES = ['NewValue', 'New Value'];
 // ---------------------------------------------------------------------------
 // TaskService
 // ---------------------------------------------------------------------------
@@ -50,7 +49,8 @@ var TaskService = /** @class */ (function () {
                         _a.trys.push([1, 3, , 4]);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(INCIDENT_TYPE_LIST_TITLE)
-                                .items.select('Id', 'Title', 'Severity', 'Department', 'IsActive')
+                                .items
+                                .select('Id', 'Title', 'Severity', 'Department', 'IsActive')
                                 .filter('IsActive eq 1')
                                 .orderBy('Title', true)()];
                     case 2:
@@ -93,14 +93,15 @@ var TaskService = /** @class */ (function () {
                         incidentTypeFieldName = _g.sent();
                         assigneeLookupField = "".concat(assigneeField.internalName, "Id");
                         mapItem = function (item) {
-                            var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+                            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
                             var assignee = _this.getPrimaryAssignee((_a = item[assigneeField.internalName]) !== null && _a !== void 0 ? _a : item.AssignedTo);
                             var fallbackAssigneeId = _this.getPrimaryAssigneeId((_b = item[assigneeLookupField]) !== null && _b !== void 0 ? _b : item.AssignedToId);
-                            var rawIncidentType = incidentTypeFieldName ? item[incidentTypeFieldName] : undefined;
+                            var rawIncidentType = incidentTypeFieldName
+                                ? item[incidentTypeFieldName]
+                                : undefined;
                             var incidentType = _this.getIncidentTypeValue(rawIncidentType);
                             var requestType = _this.normalizeRequestType((_c = item.RequestType) !== null && _c !== void 0 ? _c : item.Type);
                             var workItemType = _this.toWorkItemType(requestType);
-                            var authorId = (_e = (_d = item.Author) === null || _d === void 0 ? void 0 : _d.Id) !== null && _e !== void 0 ? _e : null; // <-- ADDED
                             return {
                                 id: item.Id,
                                 type: workItemType,
@@ -109,8 +110,8 @@ var TaskService = /** @class */ (function () {
                                 priority: item.Priority || 'Medium',
                                 site: item.Site || 'Albertsdal',
                                 assignedTo: assignee === null || assignee === void 0 ? void 0 : assignee.Title,
-                                assignedToId: (_g = (_f = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _f !== void 0 ? _f : fallbackAssigneeId) !== null && _g !== void 0 ? _g : null,
-                                assignedToEmail: (_h = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _h !== void 0 ? _h : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
+                                assignedToId: (_e = (_d = assignee === null || assignee === void 0 ? void 0 : assignee.Id) !== null && _d !== void 0 ? _d : fallbackAssigneeId) !== null && _e !== void 0 ? _e : null,
+                                assignedToEmail: (_f = assignee === null || assignee === void 0 ? void 0 : assignee.Email) !== null && _f !== void 0 ? _f : assignee === null || assignee === void 0 ? void 0 : assignee.EMail,
                                 assignedToLoginName: assignee === null || assignee === void 0 ? void 0 : assignee.LoginName,
                                 startDate: item.StartDate,
                                 dueDate: item.DueDate,
@@ -118,33 +119,56 @@ var TaskService = /** @class */ (function () {
                                 description: item.Description,
                                 requestType: requestType,
                                 department: (0, IncidentDepartmentRules_1.normalizeDepartment)(item.Department),
+                                createdBy: (_g = item.Author) === null || _g === void 0 ? void 0 : _g.Title,
+                                authorId: (_j = (_h = item.Author) === null || _h === void 0 ? void 0 : _h.Id) !== null && _j !== void 0 ? _j : null,
                                 severity: item.Severity,
                                 impact: item.Impact,
                                 affectedService: item.AffectedService,
-                                incidentTypeId: (_j = incidentType === null || incidentType === void 0 ? void 0 : incidentType.id) !== null && _j !== void 0 ? _j : _this.getPrimaryLookupId(item[incidentTypeFieldName ? "".concat(incidentTypeFieldName, "Id") : '']),
+                                incidentTypeId: (_k = incidentType === null || incidentType === void 0 ? void 0 : incidentType.id) !== null && _k !== void 0 ? _k : _this.getPrimaryLookupId(item[incidentTypeFieldName ? "".concat(incidentTypeFieldName, "Id") : '']),
                                 incidentType: incidentType,
                                 slaResponseMinutes: item.SLAResponseMinutes,
                                 slaResolutionMinutes: item.SLAResolutionMinutes,
+                                responseDueDate: item.ResponseDueDate,
+                                resolutionDueDate: item.ResolutionDueDate,
                                 slaDeadline: item.SLADeadline,
                                 slaStatus: item.SLAStatus,
-                                authorId: authorId,
                             };
                         };
                         buildSelectAndExpand = function () {
                             var selectFields = [
-                                'Id', 'Title', 'Status', 'Priority', 'Site', 'StartDate', 'DueDate',
-                                'Created', 'Description', 'RequestType', 'Department', 'Severity',
-                                'Impact', 'AffectedService', 'SLAResponseMinutes', 'SLAResolutionMinutes',
-                                'SLADeadline', 'SLAStatus',
+                                'Id',
+                                'Title',
+                                'Status',
+                                'Priority',
+                                'Site',
+                                'StartDate',
+                                'DueDate',
+                                'Created',
+                                'Description',
+                                'RequestType',
+                                'Department',
+                                'Severity',
+                                'Impact',
+                                'AffectedService',
+                                'SLAResponseMinutes',
+                                'SLAResolutionMinutes',
+                                'ResponseDueDate',
+                                'ResolutionDueDate',
+                                'SLADeadline',
+                                'SLAStatus',
                                 "".concat(assigneeField.internalName, "/Title"),
                                 "".concat(assigneeField.internalName, "/Id"),
                                 "".concat(assigneeField.internalName, "/EMail"),
                                 assigneeLookupField,
-                                'Author/Id', // <-- ADDED
+                                'Author/Id',
+                                'Author/Title',
                             ];
-                            var expandFields = [assigneeField.internalName, 'Author']; // <-- ADDED 'Author'
+                            var expandFields = [
+                                assigneeField.internalName,
+                                'Author',
+                            ];
                             if (incidentTypeFieldName) {
-                                selectFields.push("".concat(incidentTypeFieldName, "/Id"), "".concat(incidentTypeFieldName, "/Title"), "".concat(incidentTypeFieldName, "/Department"), "".concat(incidentTypeFieldName, "Id"));
+                                selectFields.push("".concat(incidentTypeFieldName, "/Id"), "".concat(incidentTypeFieldName, "/Title"), "".concat(incidentTypeFieldName, "/Department"), "".concat(incidentTypeFieldName, "/Severity"), "".concat(incidentTypeFieldName, "Id"));
                                 expandFields.push(incidentTypeFieldName);
                             }
                             return { selectFields: selectFields, expandFields: expandFields };
@@ -155,12 +179,15 @@ var TaskService = /** @class */ (function () {
                         _a = buildSelectAndExpand(), selectFields = _a.selectFields, expandFields = _a.expandFields;
                         return [4 /*yield*/, (_c = (_d = sp.web.lists
                                 .getByTitle(listTitle)
-                                .items).select.apply(_d, selectFields))
+                                .items)
+                                .select.apply(_d, selectFields))
                                 .expand.apply(_c, expandFields).top(500)()];
                     case 5:
                         items = _g.sent();
                         mappedItems_1 = items.map(mapItem);
-                        return [2 /*return*/, type ? mappedItems_1.filter(function (item) { return item.type === type; }) : mappedItems_1];
+                        return [2 /*return*/, type
+                                ? mappedItems_1.filter(function (item) { return item.type === type; })
+                                : mappedItems_1];
                     case 6:
                         primaryError_1 = _g.sent();
                         console.warn('TaskService.getTasks: full typed query failed, trying minimal expanded query.', primaryError_1);
@@ -168,15 +195,21 @@ var TaskService = /** @class */ (function () {
                     case 7:
                         _g.trys.push([7, 9, , 10]);
                         _b = buildSelectAndExpand(), selectFields = _b.selectFields, expandFields = _b.expandFields;
-                        minimalSelect = selectFields.filter(function (f) { return f !== "".concat(assigneeField.internalName, "/EMail"); });
+                        minimalSelect = selectFields.filter(function (field) {
+                            return field !== "".concat(assigneeField.internalName, "/EMail") &&
+                                field !== "".concat(incidentTypeFieldName, "/Severity");
+                        });
                         return [4 /*yield*/, (_e = (_f = sp.web.lists
                                 .getByTitle(listTitle)
-                                .items).select.apply(_f, minimalSelect))
+                                .items)
+                                .select.apply(_f, minimalSelect))
                                 .expand.apply(_e, expandFields).top(500)()];
                     case 8:
                         minimalItems = _g.sent();
                         mappedItems_2 = minimalItems.map(mapItem);
-                        return [2 /*return*/, type ? mappedItems_2.filter(function (item) { return item.type === type; }) : mappedItems_2];
+                        return [2 /*return*/, type
+                                ? mappedItems_2.filter(function (item) { return item.type === type; })
+                                : mappedItems_2];
                     case 9:
                         minimalError_1 = _g.sent();
                         console.warn('TaskService.getTasks: minimal expanded query failed, falling back to broad item fetch.', minimalError_1);
@@ -188,7 +221,9 @@ var TaskService = /** @class */ (function () {
                     case 11:
                         fallbackItems = _g.sent();
                         mappedItems = fallbackItems.map(mapItem);
-                        return [2 /*return*/, type ? mappedItems.filter(function (item) { return item.type === type; }) : mappedItems];
+                        return [2 /*return*/, type
+                                ? mappedItems.filter(function (item) { return item.type === type; })
+                                : mappedItems];
                 }
             });
         });
@@ -201,7 +236,7 @@ var TaskService = /** @class */ (function () {
                 switch (_x.label) {
                     case 0:
                         normalizedDepartment = (0, IncidentDepartmentRules_1.ensureValidDepartment)(task.department);
-                        return [4 /*yield*/, this.validateIncidentBeforePersist('create', task)];
+                        return [4 /*yield*/, this.validateIncidentBeforePersist('create', tslib_1.__assign(tslib_1.__assign({}, task), { department: normalizedDepartment }))];
                     case 1:
                         _x.sent();
                         sp = (0, pnpjsConfig_1.getSP)();
@@ -232,6 +267,8 @@ var TaskService = /** @class */ (function () {
                         this.applyLookupFieldIfAvailable(payload, incidentTypeFieldName, (_d = task.incidentTypeId) !== null && _d !== void 0 ? _d : null);
                         this.applyFieldIfAvailable(payload, availableFields, 'SLAResponseMinutes', (_e = task.slaResponseMinutes) !== null && _e !== void 0 ? _e : null);
                         this.applyFieldIfAvailable(payload, availableFields, 'SLAResolutionMinutes', (_f = task.slaResolutionMinutes) !== null && _f !== void 0 ? _f : null);
+                        this.applyFieldIfAvailable(payload, availableFields, 'ResponseDueDate', this.validateDateTime(task.responseDueDate));
+                        this.applyFieldIfAvailable(payload, availableFields, 'ResolutionDueDate', this.validateDateTime(task.resolutionDueDate));
                         this.applyFieldIfAvailable(payload, availableFields, 'SLADeadline', this.validateDateTime(task.slaDeadline));
                         this.applyFieldIfAvailable(payload, availableFields, 'SLAStatus', (_g = task.slaStatus) !== null && _g !== void 0 ? _g : null);
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
@@ -240,7 +277,8 @@ var TaskService = /** @class */ (function () {
                         this.applyAssigneeToPayload(payload, task.assignedToId, assigneeField);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.add(payload)];
+                                .items
+                                .add(this.removeUndefinedFields(payload))];
                     case 6:
                         result = _x.sent();
                         raw = result;
@@ -284,14 +322,20 @@ var TaskService = /** @class */ (function () {
                         return [4 /*yield*/, this.getIncidentTypeFieldName()];
                     case 5:
                         incidentTypeFieldName = _h.sent();
-                        normalizedDepartment = updates.department !== undefined ? (0, IncidentDepartmentRules_1.ensureValidDepartment)(updates.department) : undefined;
+                        normalizedDepartment = updates.department !== undefined
+                            ? (0, IncidentDepartmentRules_1.ensureValidDepartment)(updates.department)
+                            : undefined;
                         payload = {
                             Title: updates.title,
                             Status: updates.status,
                             Priority: updates.priority,
                             Site: updates.site,
-                            StartDate: this.validateDate(updates.startDate),
-                            DueDate: this.validateDate(updates.dueDate),
+                            StartDate: updates.startDate !== undefined
+                                ? this.validateDate(updates.startDate)
+                                : undefined,
+                            DueDate: updates.dueDate !== undefined
+                                ? this.validateDate(updates.dueDate)
+                                : undefined,
                             Description: updates.description,
                             RequestType: updates.requestType,
                             Department: normalizedDepartment,
@@ -299,23 +343,51 @@ var TaskService = /** @class */ (function () {
                         if (updates.requestType !== undefined) {
                             this.applyFieldIfAvailable(payload, availableFields, 'Type', updates.requestType);
                         }
-                        this.applyFieldIfAvailable(payload, availableFields, 'Severity', (_a = updates.severity) !== null && _a !== void 0 ? _a : null);
-                        this.applyFieldIfAvailable(payload, availableFields, 'Impact', (_b = updates.impact) !== null && _b !== void 0 ? _b : null);
-                        this.applyFieldIfAvailable(payload, availableFields, 'AffectedService', (_c = updates.affectedService) !== null && _c !== void 0 ? _c : null);
+                        if (updates.severity !== undefined || updates.requestType === 'Task') {
+                            this.applyFieldIfAvailable(payload, availableFields, 'Severity', updates.requestType === 'Task' ? null : (_a = updates.severity) !== null && _a !== void 0 ? _a : null);
+                        }
+                        if (updates.impact !== undefined || updates.requestType === 'Task') {
+                            this.applyFieldIfAvailable(payload, availableFields, 'Impact', updates.requestType === 'Task' ? null : (_b = updates.impact) !== null && _b !== void 0 ? _b : null);
+                        }
+                        if (updates.affectedService !== undefined || updates.requestType === 'Task') {
+                            this.applyFieldIfAvailable(payload, availableFields, 'AffectedService', updates.requestType === 'Task'
+                                ? null
+                                : (_c = updates.affectedService) !== null && _c !== void 0 ? _c : null);
+                        }
                         if (updates.incidentTypeId !== undefined || updates.requestType === 'Task') {
-                            this.applyLookupFieldIfAvailable(payload, incidentTypeFieldName, updates.requestType === 'Task' ? null : (_d = updates.incidentTypeId) !== null && _d !== void 0 ? _d : null);
+                            this.applyLookupFieldIfAvailable(payload, incidentTypeFieldName, updates.requestType === 'Task'
+                                ? null
+                                : (_d = updates.incidentTypeId) !== null && _d !== void 0 ? _d : null);
                         }
                         if (updates.slaResponseMinutes !== undefined || updates.requestType === 'Task') {
-                            this.applyFieldIfAvailable(payload, availableFields, 'SLAResponseMinutes', (_e = updates.slaResponseMinutes) !== null && _e !== void 0 ? _e : null);
+                            this.applyFieldIfAvailable(payload, availableFields, 'SLAResponseMinutes', updates.requestType === 'Task'
+                                ? null
+                                : (_e = updates.slaResponseMinutes) !== null && _e !== void 0 ? _e : null);
                         }
                         if (updates.slaResolutionMinutes !== undefined || updates.requestType === 'Task') {
-                            this.applyFieldIfAvailable(payload, availableFields, 'SLAResolutionMinutes', (_f = updates.slaResolutionMinutes) !== null && _f !== void 0 ? _f : null);
+                            this.applyFieldIfAvailable(payload, availableFields, 'SLAResolutionMinutes', updates.requestType === 'Task'
+                                ? null
+                                : (_f = updates.slaResolutionMinutes) !== null && _f !== void 0 ? _f : null);
+                        }
+                        if (updates.responseDueDate !== undefined || updates.requestType === 'Task') {
+                            this.applyFieldIfAvailable(payload, availableFields, 'ResponseDueDate', updates.requestType === 'Task'
+                                ? null
+                                : this.validateDateTime(updates.responseDueDate));
+                        }
+                        if (updates.resolutionDueDate !== undefined || updates.requestType === 'Task') {
+                            this.applyFieldIfAvailable(payload, availableFields, 'ResolutionDueDate', updates.requestType === 'Task'
+                                ? null
+                                : this.validateDateTime(updates.resolutionDueDate));
                         }
                         if (updates.slaDeadline !== undefined || updates.requestType === 'Task') {
-                            this.applyFieldIfAvailable(payload, availableFields, 'SLADeadline', this.validateDateTime(updates.slaDeadline));
+                            this.applyFieldIfAvailable(payload, availableFields, 'SLADeadline', updates.requestType === 'Task'
+                                ? null
+                                : this.validateDateTime(updates.slaDeadline));
                         }
                         if (updates.slaStatus !== undefined || updates.requestType === 'Task') {
-                            this.applyFieldIfAvailable(payload, availableFields, 'SLAStatus', (_g = updates.slaStatus) !== null && _g !== void 0 ? _g : null);
+                            this.applyFieldIfAvailable(payload, availableFields, 'SLAStatus', updates.requestType === 'Task'
+                                ? null
+                                : (_g = updates.slaStatus) !== null && _g !== void 0 ? _g : null);
                         }
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
                     case 6:
@@ -323,7 +395,11 @@ var TaskService = /** @class */ (function () {
                         if (updates.assignedToId !== undefined) {
                             this.applyAssigneeToPayload(payload, updates.assignedToId, assigneeField);
                         }
-                        return [4 /*yield*/, sp.web.lists.getByTitle(listTitle).items.getById(id).update(payload)];
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(listTitle)
+                                .items
+                                .getById(id)
+                                .update(this.removeUndefinedFields(payload))];
                     case 7:
                         _h.sent();
                         return [2 /*return*/];
@@ -341,7 +417,11 @@ var TaskService = /** @class */ (function () {
                         return [4 /*yield*/, this.getTaskListTitle()];
                     case 1:
                         listTitle = _a.sent();
-                        return [4 /*yield*/, sp.web.lists.getByTitle(listTitle).items.getById(id).delete()];
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(listTitle)
+                                .items
+                                .getById(id)
+                                .delete()];
                     case 2:
                         _a.sent();
                         return [2 /*return*/];
@@ -392,7 +472,8 @@ var TaskService = /** @class */ (function () {
                         if (!(newStatus && newStatus !== oldStatus)) return [3 /*break*/, 7];
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.getById(item.Id)
+                                .items
+                                .getById(item.Id)
                                 .update({ SLAStatus: newStatus })];
                     case 6:
                         _e.sent();
@@ -429,12 +510,13 @@ var TaskService = /** @class */ (function () {
                         previousName = (_c = assigneeObj === null || assigneeObj === void 0 ? void 0 : assigneeObj.Title) !== null && _c !== void 0 ? _c : '';
                         updatePayload = {
                             SLAStatus: 'Breached',
-                            Status: 'Escalated'
+                            Status: 'Escalated',
                         };
                         this.applyAssigneeToPayload(updatePayload, newAssignee.id, assigneeField);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .items.getById(item.Id)
+                                .items
+                                .getById(item.Id)
                                 .update(updatePayload)];
                     case 10:
                         _e.sent();
@@ -563,7 +645,7 @@ var TaskService = /** @class */ (function () {
     };
     TaskService.prototype.validateIncidentBeforePersist = function (operation, payload, existing) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var merged, requestType, department, severity, site, assignedToId, incidentTypeTitle, incidentTypeId, incidentTypeDepartment, actingUser, incident, assignmentChanged;
+            var merged, requestType, department, severity, site, assignedToId, incidentTypeId, incidentTypeTitle, incidentTypeDepartment, actingUser, incident, assignmentChanged, targetDepartment;
             var _a, _b, _c, _d, _e;
             return tslib_1.__generator(this, function (_f) {
                 switch (_f.label) {
@@ -577,12 +659,18 @@ var TaskService = /** @class */ (function () {
                         severity = (0, IncidentDepartmentRules_1.ensureValidSeverity)(merged.severity);
                         site = merged.site;
                         assignedToId = (_a = merged.assignedToId) !== null && _a !== void 0 ? _a : null;
-                        incidentTypeTitle = (_b = merged.incidentType) === null || _b === void 0 ? void 0 : _b.title;
-                        incidentTypeId = (_c = merged.incidentTypeId) !== null && _c !== void 0 ? _c : null;
+                        incidentTypeId = (_b = merged.incidentTypeId) !== null && _b !== void 0 ? _b : null;
+                        incidentTypeTitle = (_c = merged.incidentType) === null || _c === void 0 ? void 0 : _c.title;
                         if (!incidentTypeId) {
                             throw new Error('Incident Type is required before an incident can be saved.');
                         }
-                        if (IncidentPolicy_1.IncidentPolicy.requiresSite({ department: department, severity: severity, site: site, incidentTypeTitle: incidentTypeTitle }) && !site) {
+                        if (IncidentPolicy_1.IncidentPolicy.requiresSite({
+                            department: department,
+                            severity: severity,
+                            site: site,
+                            incidentTypeTitle: incidentTypeTitle,
+                        }) &&
+                            !site) {
                             throw new Error('IT incidents require a site.');
                         }
                         if ((_d = merged.incidentType) === null || _d === void 0 ? void 0 : _d.department) {
@@ -594,7 +682,8 @@ var TaskService = /** @class */ (function () {
                         if (((_e = merged.incidentType) === null || _e === void 0 ? void 0 : _e.severity) && merged.incidentType.severity !== severity) {
                             throw new Error('Incident type severity must match incident severity.');
                         }
-                        if (incidentTypeTitle && !(0, IncidentCatalog_1.isIncidentTitleAllowedForDepartment)(department, incidentTypeTitle)) {
+                        if (incidentTypeTitle &&
+                            !(0, IncidentCatalog_1.isIncidentTitleAllowedForDepartment)(department, incidentTypeTitle)) {
                             throw new Error('Incident type is not compatible with the selected department.');
                         }
                         return [4 /*yield*/, this.getCurrentIncidentUserContext()];
@@ -607,13 +696,16 @@ var TaskService = /** @class */ (function () {
                             site: site,
                             incidentTypeTitle: incidentTypeTitle,
                         };
-                        if (operation === 'create' && !IncidentPolicy_1.IncidentPolicy.canCreateIncident(actingUser, department)) {
+                        if (operation === 'create' &&
+                            !IncidentPolicy_1.IncidentPolicy.canCreateIncident(actingUser, department)) {
                             throw new Error('You are not allowed to create incidents for this department.');
                         }
-                        if (operation === 'update' && !IncidentPolicy_1.IncidentPolicy.canEditIncident(actingUser, incident)) {
+                        if (operation === 'update' &&
+                            !IncidentPolicy_1.IncidentPolicy.canEditIncident(actingUser, incident)) {
                             throw new Error('You are not allowed to edit this incident.');
                         }
-                        assignmentChanged = operation === 'create' || payload.assignedToId !== undefined;
+                        assignmentChanged = operation === 'create' ||
+                            payload.assignedToId !== undefined;
                         if (!assignmentChanged || assignedToId === null) {
                             return [2 /*return*/];
                         }
@@ -623,13 +715,57 @@ var TaskService = /** @class */ (function () {
                             }
                             return [2 /*return*/];
                         }
-                        if (!IncidentPolicy_1.IncidentPolicy.canAssignIncident(actingUser, incident, { id: assignedToId, department: department })) {
+                        return [4 /*yield*/, this.getUserDepartmentById(assignedToId)];
+                    case 2:
+                        targetDepartment = _f.sent();
+                        if (!IncidentPolicy_1.IncidentPolicy.canAssignIncident(actingUser, incident, {
+                            id: assignedToId,
+                            department: targetDepartment,
+                        })) {
                             throw new Error('You are not allowed to assign this incident.');
                         }
                         return [2 /*return*/];
                 }
             });
         });
+    };
+    TaskService.prototype.getUserDepartmentById = function (userId) {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var sp, items, error_4;
+            var _a;
+            return tslib_1.__generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        sp = (0, pnpjsConfig_1.getSP)();
+                        _b.label = 1;
+                    case 1:
+                        _b.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(USER_ROLE_LIST_TITLE)
+                                .items
+                                .filter("User/Id eq ".concat(userId, " and IsActive eq 1"))
+                                .select('Department', 'User/Id')
+                                .expand('User')
+                                .top(1)()];
+                    case 2:
+                        items = _b.sent();
+                        return [2 /*return*/, (_a = items[0]) === null || _a === void 0 ? void 0 : _a.Department];
+                    case 3:
+                        error_4 = _b.sent();
+                        console.warn('TaskService: failed to resolve target user department.', error_4);
+                        return [2 /*return*/, undefined];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    TaskService.prototype.removeUndefinedFields = function (payload) {
+        return Object.keys(payload).reduce(function (cleaned, key) {
+            if (payload[key] !== undefined) {
+                cleaned[key] = payload[key];
+            }
+            return cleaned;
+        }, {});
     };
     TaskService.prototype.validateDate = function (date) {
         if (!date)
@@ -674,7 +810,9 @@ var TaskService = /** @class */ (function () {
                         _b.label = 2;
                     case 2:
                         _b.trys.push([2, 4, , 5]);
-                        return [4 /*yield*/, sp.web.lists.getByTitle(listTitle).select('Id')()];
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(listTitle)
+                                .select('Id')()];
                     case 3:
                         _b.sent();
                         return [2 /*return*/, listTitle];
@@ -699,16 +837,6 @@ var TaskService = /** @class */ (function () {
             });
         });
     };
-    TaskService.prototype.getIncidentTypeFieldName = function () {
-        return tslib_1.__awaiter(this, void 0, void 0, function () {
-            return tslib_1.__generator(this, function (_a) {
-                if (!this.incidentTypeFieldNamePromise) {
-                    this.incidentTypeFieldNamePromise = this.loadIncidentTypeFieldName();
-                }
-                return [2 /*return*/, this.incidentTypeFieldNamePromise];
-            });
-        });
-    };
     TaskService.prototype.loadListFieldNames = function () {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
             var sp, listTitle, fields;
@@ -721,11 +849,22 @@ var TaskService = /** @class */ (function () {
                         listTitle = _a.sent();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .fields.select('InternalName')()];
+                                .fields
+                                .select('InternalName')()];
                     case 2:
                         fields = _a.sent();
                         return [2 /*return*/, new Set(fields.map(function (field) { return field.InternalName; }))];
                 }
+            });
+        });
+    };
+    TaskService.prototype.getIncidentTypeFieldName = function () {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            return tslib_1.__generator(this, function (_a) {
+                if (!this.incidentTypeFieldNamePromise) {
+                    this.incidentTypeFieldNamePromise = this.loadIncidentTypeFieldName();
+                }
+                return [2 /*return*/, this.incidentTypeFieldNamePromise];
             });
         });
     };
@@ -743,19 +882,23 @@ var TaskService = /** @class */ (function () {
                         listTitle = _b.sent();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .fields.select('InternalName', 'Title', 'TypeAsString')()];
+                                .fields
+                                .select('InternalName', 'Title', 'TypeAsString')()];
                     case 2:
                         fields = _b.sent();
                         field = fields.find(function (candidate) {
                             if (!(candidate === null || candidate === void 0 ? void 0 : candidate.InternalName))
                                 return false;
-                            if (candidate.TypeAsString !== 'Lookup' && candidate.TypeAsString !== 'LookupMulti')
+                            if (candidate.TypeAsString !== 'Lookup' &&
+                                candidate.TypeAsString !== 'LookupMulti') {
                                 return false;
+                            }
                             var normalizedInternalName = _this.normalizeFieldName(candidate.InternalName);
                             var normalizedTitle = _this.normalizeFieldName(candidate.Title);
                             return INCIDENT_TYPE_FIELD_CANDIDATES.some(function (name) {
                                 var normalizedCandidate = _this.normalizeFieldName(name);
-                                return normalizedInternalName === normalizedCandidate || normalizedTitle === normalizedCandidate;
+                                return (normalizedInternalName === normalizedCandidate ||
+                                    normalizedTitle === normalizedCandidate);
                             });
                         });
                         return [2 /*return*/, (_a = field === null || field === void 0 ? void 0 : field.InternalName) !== null && _a !== void 0 ? _a : null];
@@ -786,27 +929,35 @@ var TaskService = /** @class */ (function () {
                         listTitle = _a.sent();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
-                                .fields.select('InternalName', 'Title', 'TypeAsString', 'AllowMultipleValues')()];
+                                .fields
+                                .select('InternalName', 'Title', 'TypeAsString', 'AllowMultipleValues')()];
                     case 2:
                         fields = _a.sent();
                         field = fields.find(function (candidate) {
                             if (!(candidate === null || candidate === void 0 ? void 0 : candidate.InternalName))
                                 return false;
-                            if (candidate.TypeAsString !== 'User' && candidate.TypeAsString !== 'UserMulti')
+                            if (candidate.TypeAsString !== 'User' &&
+                                candidate.TypeAsString !== 'UserMulti') {
                                 return false;
+                            }
                             var normalizedInternalName = _this.normalizeFieldName(candidate.InternalName);
                             var normalizedTitle = _this.normalizeFieldName(candidate.Title);
                             return ASSIGNEE_FIELD_CANDIDATES.some(function (name) {
                                 var normalizedCandidate = _this.normalizeFieldName(name);
-                                return normalizedInternalName === normalizedCandidate || normalizedTitle === normalizedCandidate;
+                                return (normalizedInternalName === normalizedCandidate ||
+                                    normalizedTitle === normalizedCandidate);
                             });
                         });
                         if (!field) {
-                            return [2 /*return*/, { internalName: 'AssignedTo', isMulti: false }];
+                            return [2 /*return*/, {
+                                    internalName: 'AssignedTo',
+                                    isMulti: false,
+                                }];
                         }
                         return [2 /*return*/, {
                                 internalName: field.InternalName,
-                                isMulti: field.AllowMultipleValues === true || field.TypeAsString === 'UserMulti',
+                                isMulti: field.AllowMultipleValues === true ||
+                                    field.TypeAsString === 'UserMulti',
                             }];
                 }
             });
@@ -822,7 +973,9 @@ var TaskService = /** @class */ (function () {
             payload["".concat(fieldName, "Id")] = assignedToId;
             return;
         }
-        payload["".concat(fieldName, "Id")] = { results: [assignedToId] };
+        payload["".concat(fieldName, "Id")] = {
+            results: [assignedToId],
+        };
     };
     TaskService.prototype.applyFieldIfAvailable = function (payload, availableFields, fieldName, value) {
         if (!availableFields.has(fieldName))
@@ -844,7 +997,8 @@ var TaskService = /** @class */ (function () {
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(INCIDENT_LOG_LIST_TITLE)
-                                .fields.select('InternalName', 'Title', 'TypeAsString')()];
+                                .fields
+                                .select('InternalName', 'Title', 'TypeAsString')()];
                     case 1:
                         fields = _e.sent();
                         workItemField = this.findFieldByCandidates(fields, INCIDENT_LOG_WORKITEM_FIELD_CANDIDATES);
@@ -855,7 +1009,8 @@ var TaskService = /** @class */ (function () {
                             Title: 'Incident Created',
                         };
                         if (workItemField) {
-                            if (workItemField.TypeAsString === 'Lookup' || workItemField.TypeAsString === 'LookupMulti') {
+                            if (workItemField.TypeAsString === 'Lookup' ||
+                                workItemField.TypeAsString === 'LookupMulti') {
                                 payload["".concat(workItemField.InternalName, "Id")] = workItemId;
                             }
                             else {
@@ -877,7 +1032,8 @@ var TaskService = /** @class */ (function () {
                         }
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(INCIDENT_LOG_LIST_TITLE)
-                                .items.add(payload)];
+                                .items
+                                .add(payload)];
                     case 2:
                         _e.sent();
                         return [2 /*return*/];
@@ -915,7 +1071,8 @@ var TaskService = /** @class */ (function () {
             var normalizedTitle = _this.normalizeFieldName(candidate.Title);
             return candidates.some(function (name) {
                 var normalizedCandidate = _this.normalizeFieldName(name);
-                return normalizedInternalName === normalizedCandidate || normalizedTitle === normalizedCandidate;
+                return (normalizedInternalName === normalizedCandidate ||
+                    normalizedTitle === normalizedCandidate);
             });
         });
     };
@@ -939,7 +1096,9 @@ var TaskService = /** @class */ (function () {
             .toLowerCase();
     };
     TaskService.prototype.normalizeRequestType = function (value) {
-        return (value !== null && value !== void 0 ? value : '').toLowerCase() === 'incident' ? 'Incident' : 'Task';
+        return (value !== null && value !== void 0 ? value : '').toLowerCase() === 'incident'
+            ? 'Incident'
+            : 'Task';
     };
     TaskService.prototype.toWorkItemType = function (requestType) {
         return requestType === 'Incident' ? 'incident' : 'task';
@@ -959,22 +1118,25 @@ var TaskService = /** @class */ (function () {
             return 'AtRisk';
         var remainingMs = resDate.getTime() - now.getTime();
         var remainingHours = remainingMs / (1000 * 60 * 60);
-        if (remainingHours <= TaskService.AT_RISK_REMAINING_HOURS)
+        if (remainingHours <= TaskService.AT_RISK_REMAINING_HOURS) {
             return 'AtRisk';
+        }
         return 'OnTrack';
     };
     TaskService.prototype.getDepartmentRole = function (department, role) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, items, user, e_1;
+            var sp, safeDepartment, safeRole, items, user, error_5;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
                         sp = (0, pnpjsConfig_1.getSP)();
+                        safeDepartment = department.replace(/'/g, "''");
+                        safeRole = role.replace(/'/g, "''");
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(USER_ROLE_LIST_TITLE)
                                 .items
-                                .filter("Department eq '".concat(department, "' and Role eq '").concat(role, "'"))
+                                .filter("Department eq '".concat(safeDepartment, "' and Role eq '").concat(safeRole, "' and IsActive eq 1"))
                                 .select('User/Id', 'User/Title', 'User/EMail')
                                 .expand('User')()];
                     case 1:
@@ -988,8 +1150,8 @@ var TaskService = /** @class */ (function () {
                                 email: user.EMail,
                             }];
                     case 2:
-                        e_1 = _a.sent();
-                        console.warn("Failed to fetch ".concat(role, " for ").concat(department), e_1);
+                        error_5 = _a.sent();
+                        console.warn("Failed to fetch ".concat(role, " for ").concat(department), error_5);
                         return [2 /*return*/, null];
                     case 3: return [2 /*return*/];
                 }
@@ -1036,7 +1198,8 @@ var TaskService = /** @class */ (function () {
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(INCIDENT_LOG_LIST_TITLE)
-                                .fields.select('InternalName', 'Title', 'TypeAsString')()];
+                                .fields
+                                .select('InternalName', 'Title', 'TypeAsString')()];
                     case 1:
                         fields = _a.sent();
                         workItemField = this.findFieldByCandidates(fields, INCIDENT_LOG_WORKITEM_FIELD_CANDIDATES);
@@ -1048,7 +1211,8 @@ var TaskService = /** @class */ (function () {
                         performedByField = this.findFieldByCandidates(fields, INCIDENT_LOG_PERFORMEDBY_FIELD_CANDIDATES);
                         payload = {};
                         if (workItemField) {
-                            if (workItemField.TypeAsString === 'Lookup' || workItemField.TypeAsString === 'LookupMulti') {
+                            if (workItemField.TypeAsString === 'Lookup' ||
+                                workItemField.TypeAsString === 'LookupMulti') {
                                 payload["".concat(workItemField.InternalName, "Id")] = workItemId;
                             }
                             else {
@@ -1068,7 +1232,10 @@ var TaskService = /** @class */ (function () {
                         if (performedByField) {
                             payload["".concat(performedByField.InternalName, "Id")] = performedById;
                         }
-                        return [4 /*yield*/, sp.web.lists.getByTitle(INCIDENT_LOG_LIST_TITLE).items.add(payload)];
+                        return [4 /*yield*/, sp.web.lists
+                                .getByTitle(INCIDENT_LOG_LIST_TITLE)
+                                .items
+                                .add(payload)];
                     case 2:
                         _a.sent();
                         return [2 /*return*/];
