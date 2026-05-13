@@ -14,7 +14,7 @@ export class DepartmentService {
         } catch (error) {
             console.error('[DepartmentService] failed:', error);
             // Fallback – keeps UI functional even if the list is missing
-            return ['IT', 'Finance', 'Operations', 'Support', 'Accounts'];
+            return ['Support', 'IT', 'Accounts', 'Operations', 'Complaints'];
         }
     }
 }

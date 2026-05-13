@@ -5,6 +5,14 @@ import { getSP } from '../pnpjsConfig';
 import type { IIncidentType, ITask, TaskRequestType, WorkItemType } from '../webparts/taskBoard/components/TaskTypes';
 import { CollaboratorService } from './CollaboratorService';
 import { NotificationService } from './NotificationService';
+import { getUserRole } from './UserRoleService';
+import { IncidentPolicy, type IIncidentUserContext } from './incidents/IncidentPolicy';
+import {
+    ensureValidDepartment,
+    ensureValidSeverity,
+    normalizeDepartment,
+} from './incidents/IncidentDepartmentRules';
+import { isIncidentTitleAllowedForDepartment } from './incidents/IncidentCatalog';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -69,7 +77,7 @@ export class TaskService {
         try {
             const items = await sp.web.lists
                 .getByTitle(INCIDENT_TYPE_LIST_TITLE)
-                .items.select('Id', 'Title', 'Severity', 'IsActive')
+                .items.select('Id', 'Title', 'Severity', 'Department', 'IsActive')
                 .filter('IsActive eq 1')
                 .orderBy('Title', true)();
 
@@ -79,7 +87,7 @@ export class TaskService {
                     id: item.Id,
                     title: item.Title,
                     severity: item.Severity,
-                    department: item.Department,
+                    department: normalizeDepartment(item.Department),
                     isActive: item.IsActive === true || item.IsActive === 1,
                 }));
         } catch (error) {
@@ -120,7 +128,7 @@ export class TaskService {
                 createdAt: item.Created,
                 description: item.Description,
                 requestType,
-                department: item.Department || 'IT',
+                department: normalizeDepartment(item.Department),
                 severity: item.Severity,
                 impact: item.Impact,
                 affectedService: item.AffectedService,
@@ -204,6 +212,9 @@ export class TaskService {
     }
 
     public async createTask(task: any): Promise<any> {
+        const normalizedDepartment = ensureValidDepartment(task.department);
+        await this.validateIncidentBeforePersist('create', task);
+
         const sp = getSP();
         const listTitle = await this.getTaskListTitle();
         const availableFields = await this.getListFieldNames();
@@ -218,7 +229,7 @@ export class TaskService {
             DueDate: this.validateDate(task.dueDate),
             Description: task.description,
             RequestType: task.requestType,
-            Department: task.department,
+            Department: normalizedDepartment,
         };
         this.applyFieldIfAvailable(payload, availableFields, 'Type', task.requestType);
         this.applyFieldIfAvailable(payload, availableFields, 'Severity', task.severity ?? null);
@@ -258,11 +269,16 @@ export class TaskService {
     }
 
     public async updateTask(id: number, updates: Partial<ITask>): Promise<void> {
+        const existingItem = await this.getTaskSnapshot(id);
+        await this.validateIncidentBeforePersist('update', updates, existingItem ?? undefined);
+
         const sp = getSP();
         const listTitle = await this.getTaskListTitle();
         const availableFields = await this.getListFieldNames();
         const incidentTypeFieldName = await this.getIncidentTypeFieldName();
 
+        const normalizedDepartment =
+            updates.department !== undefined ? ensureValidDepartment(updates.department) : undefined;
         const payload: Record<string, any> = {
             Title: updates.title,
             Status: updates.status,
@@ -272,7 +288,7 @@ export class TaskService {
             DueDate: this.validateDate(updates.dueDate),
             Description: updates.description,
             RequestType: updates.requestType,
-            Department: updates.department,
+            Department: normalizedDepartment,
         };
         if (updates.requestType !== undefined) {
             this.applyFieldIfAvailable(payload, availableFields, 'Type', updates.requestType);
@@ -450,6 +466,115 @@ export class TaskService {
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+
+    private async getTaskSnapshot(id: number): Promise<ITask | null> {
+        const tasks = await this.getTasks();
+        return tasks.find((item) => item.id === id) ?? null;
+    }
+
+    private async getCurrentIncidentUserContext(): Promise<IIncidentUserContext> {
+        const sp = getSP();
+        const currentUser = await sp.web.currentUser();
+        const userId = (currentUser as any).Id ?? null;
+        const userEmail = (currentUser as any).Email ?? '';
+
+        let role = null;
+        if (userEmail) {
+            try {
+                role = await getUserRole(userEmail);
+            } catch (error) {
+                console.warn('TaskService: failed to resolve current user role for policy validation.', error);
+            }
+        }
+
+        return {
+            id: userId,
+            role: role?.role ?? '',
+            department: role?.department ?? '',
+            canAssign: role?.canAssign === true,
+            canAssignAcrossDepartments: role?.canAssignAcrossDepartments === true,
+            isDepartmentLead: role?.isDepartmentLead === true,
+        };
+    }
+
+    private async validateIncidentBeforePersist(
+        operation: 'create' | 'update',
+        payload: any,
+        existing?: Partial<ITask>
+    ): Promise<void> {
+        const merged = {
+            ...(existing ?? {}),
+            ...(payload ?? {}),
+        };
+
+        const requestType = this.normalizeRequestType(merged.requestType);
+        if (requestType !== 'Incident') {
+            return;
+        }
+
+        const department = ensureValidDepartment(merged.department);
+        const severity = ensureValidSeverity(merged.severity);
+        const site = merged.site;
+        const assignedToId = merged.assignedToId ?? null;
+        const incidentTypeTitle = merged.incidentType?.title;
+        const incidentTypeId = merged.incidentTypeId ?? null;
+
+        if (!incidentTypeId) {
+            throw new Error('Incident Type is required before an incident can be saved.');
+        }
+
+        if (IncidentPolicy.requiresSite({ department, severity, site, incidentTypeTitle }) && !site) {
+            throw new Error('IT incidents require a site.');
+        }
+
+        if (merged.incidentType?.department) {
+            const incidentTypeDepartment = ensureValidDepartment(merged.incidentType.department);
+            if (incidentTypeDepartment !== department) {
+                throw new Error('Incident type department must match incident department.');
+            }
+        }
+
+        if (merged.incidentType?.severity && merged.incidentType.severity !== severity) {
+            throw new Error('Incident type severity must match incident severity.');
+        }
+
+        if (incidentTypeTitle && !isIncidentTitleAllowedForDepartment(department, incidentTypeTitle)) {
+            throw new Error('Incident type is not compatible with the selected department.');
+        }
+
+        const actingUser = await this.getCurrentIncidentUserContext();
+        const incident = {
+            department,
+            severity,
+            assignedToId,
+            site,
+            incidentTypeTitle,
+        };
+
+        if (operation === 'create' && !IncidentPolicy.canCreateIncident(actingUser, department)) {
+            throw new Error('You are not allowed to create incidents for this department.');
+        }
+
+        if (operation === 'update' && !IncidentPolicy.canEditIncident(actingUser, incident)) {
+            throw new Error('You are not allowed to edit this incident.');
+        }
+
+        const assignmentChanged = operation === 'create' || payload.assignedToId !== undefined;
+        if (!assignmentChanged || assignedToId === null) {
+            return;
+        }
+
+        if (assignedToId === actingUser.id) {
+            if (!IncidentPolicy.canClaimIncident(actingUser, incident)) {
+                throw new Error('You are not allowed to claim this incident.');
+            }
+            return;
+        }
+
+        if (!IncidentPolicy.canAssignIncident(actingUser, incident, { id: assignedToId, department })) {
+            throw new Error('You are not allowed to assign this incident.');
+        }
+    }
 
     private validateDate(date?: string): string | null {
         if (!date) return null;
@@ -679,7 +804,7 @@ export class TaskService {
             id: item.Id,
             title: item.Title,
             severity: item.Severity,
-            department: item.Department,
+            department: normalizeDepartment(item.Department),
         };
     }
 

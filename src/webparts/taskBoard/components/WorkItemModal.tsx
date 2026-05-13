@@ -20,6 +20,12 @@ import { THEME } from './theme';
 import { DepartmentService } from '../../../services/DepartmentService';
 import { SharePointService, type IncidentTypeItem } from '../services/SharePointService';
 import { DATA_SITE } from '../../../pnpjsConfig';
+import { IncidentAssignmentService } from '../../../services/incidents/IncidentAssignmentService';
+import { IncidentPolicy, type IIncidentUserContext } from '../../../services/incidents/IncidentPolicy';
+import {
+    ALLOWED_TASK_DEPARTMENTS,
+    normalizeDepartment,
+} from '../../../services/incidents/IncidentDepartmentRules';
 
 export interface IWorkItemModalProps {
     task: Task | null;
@@ -28,6 +34,7 @@ export interface IWorkItemModalProps {
     context?: WebPartContext;
     currentUserName: string;
     currentUserSpId: number | null;
+    incidentUserContext: IIncidentUserContext;
     onSave: (task: Task) => Promise<Task | null>;
     onDelete: (id: string) => void;
     onClose: () => void;
@@ -107,6 +114,7 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
     context,
     currentUserName,
     currentUserSpId,
+    incidentUserContext,
     onSave,
     onDelete,
     onClose,
@@ -140,8 +148,11 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
         const loadDepartments = async () => {
             const service = new DepartmentService();
             const data = await service.getDepartments();
+            const normalizedDepartments = Array.from(
+                new Set(data.map((department) => normalizeDepartment(department)))
+            ).filter((department) => ALLOWED_TASK_DEPARTMENTS.includes(department));
             if (isMounted) {
-                setDepartments(data);
+                setDepartments(normalizedDepartments);
                 setDepartmentsLoading(false);
             }
         };
@@ -235,7 +246,7 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined,
             incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined,
             incidentType: null,
-            department: task.department,
+            department: normalizeDepartment(task.department),
             slaResponseMinutes: task.slaResponseMinutes,
             slaResolutionMinutes: task.slaResolutionMinutes,
             slaDeadline: task.slaDeadline,
@@ -298,6 +309,9 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                 setSeverity('');
                 return { ...prev, ...patch, requestType: toRequestType(nextType as WorkItemType), incidentTypeId: undefined, incidentType: null, severity: undefined };
             }
+            if (patch.department !== undefined) {
+                patch.department = normalizeDepartment(patch.department);
+            }
             return { ...prev, ...patch, requestType: toRequestType(nextType as WorkItemType) };
         });
         if ('title' in patch) setTitleError('');
@@ -342,15 +356,33 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
             setIncidentTypeError('Incident Type is required');
             return;
         }
+        if (draft.type === 'incident' && IncidentPolicy.requiresSite({
+            department: draft.department,
+            severity: draft.severity,
+            site: draft.site,
+            incidentTypeTitle: selectedIncidentType?.title ?? undefined,
+        }) && !draft.site) {
+            setSaveError('IT incidents require a site.');
+            return;
+        }
         setIsSaving(true);
         setSaveError('');
         try {
+            const selectedIncidentTypeOption =
+                incidentTypes.find((item) => item.Id === effectiveIncidentTypeId) ?? null;
             const itemToSave: Task = draft.type === 'incident'
                 ? {
                     ...draft,
                     requestType: 'Incident',
                     incidentTypeId: effectiveIncidentTypeId ?? undefined,
-                    incidentType: null,
+                    incidentType: effectiveIncidentTypeId
+                        ? {
+                            id: effectiveIncidentTypeId,
+                            title: selectedIncidentTypeOption?.Title ?? selectedIncidentType?.title ?? '',
+                            severity: (severity || selectedIncidentType?.severity || draft.severity) as IncidentSeverity,
+                            department: normalizeDepartment(draft.department),
+                        }
+                        : null,
                     severity: (severity || selectedIncidentType?.severity || draft.severity) as IncidentSeverity | undefined,
                     impact: (draft.impact || '').trim(),
                     affectedService: (draft.affectedService || '').trim(),
@@ -391,6 +423,29 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
     const derivedPriority = draft.type === 'incident'
         ? (derivedSeverity ? getPriorityFromSeverity(derivedSeverity as IncidentSeverity) : draft.priority)
         : draft.priority;
+    const canClaimCurrentIncident =
+        draft.type === 'incident' &&
+        IncidentAssignmentService.canClaimIncident(incidentUserContext, {
+            department: draft.department,
+            severity: draft.severity,
+            assignedToId: draft.assignedToId,
+            incidentType: selectedIncidentType ?? draft.incidentType ?? null,
+            site: draft.site,
+        });
+    const canEditAssignee =
+        draft.type === 'incident'
+            ? IncidentAssignmentService.canAssignIncident(
+                incidentUserContext,
+                {
+                    department: draft.department,
+                    severity: draft.severity,
+                    assignedToId: draft.assignedToId,
+                    incidentType: selectedIncidentType ?? draft.incidentType ?? null,
+                    site: draft.site,
+                },
+                assignee?.id != null ? { id: assignee.id, department: draft.department } : null
+            ) || canClaimCurrentIncident
+            : canAssign;
 
     return (
         <div style={overlayStyle} onClick={onClose}>
@@ -415,10 +470,26 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
                         {titleError && <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: '#ef4444' }}>{titleError}</span>}
                     </div>
 
-                    {canAssign && (
+                    {canEditAssignee && (
                         <div>
                             <label style={labelStyle}>Assigned To</label>
                             <PeoplePicker value={assignee} onChange={handleAssigneeChange} placeholder="Search by name or email..." canEdit={true} siteUrl={siteUrl} />
+                            {draft.type === 'incident' && canClaimCurrentIncident && currentUserSpId && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        handleAssigneeChange({
+                                            id: currentUserSpId,
+                                            name: currentUserName,
+                                            email: '',
+                                            loginName: '',
+                                        })
+                                    }
+                                    style={{ marginTop: '8px', background: 'none', border: 'none', color: THEME.colors.primary, cursor: 'pointer', fontSize: '12px', padding: 0 }}
+                                >
+                                    Assign to me
+                                </button>
+                            )}
                         </div>
                     )}
 
