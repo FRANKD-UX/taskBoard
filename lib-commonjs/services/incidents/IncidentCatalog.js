@@ -13,11 +13,11 @@ exports.INCIDENT_CATALOG = {
     ],
     IT: [
         { title: 'No internet on site', severity: 'P1', requiresSite: true },
-        { title: 'Internal systems down', severity: 'P1', requiresSite: true },
-        { title: 'Slow internet', severity: 'P2', requiresSite: true },
-        { title: 'Phones not working', severity: 'P1', requiresSite: true },
-        { title: 'Hardware issues', severity: 'P3', requiresSite: true },
-        { title: 'Set up laptop for new employee', severity: 'P2', requiresSite: true },
+        { title: 'Internal systems down', severity: 'P1' },
+        { title: 'Slow internet', severity: 'P2' },
+        { title: 'Phones not working', severity: 'P1' },
+        { title: 'Hardware issues', severity: 'P3' },
+        { title: 'Set up laptop for new employee', severity: 'P2' },
     ],
     Accounts: [
         { title: "PPP's", severity: 'P1' },
