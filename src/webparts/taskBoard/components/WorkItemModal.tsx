@@ -567,7 +567,7 @@ const WorkItemModal: React.FC<IWorkItemModalProps> = ({
 
                     <div>
                         <label style={labelStyle} htmlFor="wim-department">Department</label>
-                        <select id="wim-department" value={draft.department} onChange={(e) => update({ department: e.target.value })} style={inputStyle}>
+                        <select id="wim-department" value={draft.department} onChange={(e) => update({ department: normalizeDepartment(e.target.value) })} style={inputStyle}>
                             {departmentsLoading ? (<option>Loading...</option>) : departments.length === 0 ? (<option>No departments</option>) : (departments.map(department => <option key={department} value={department}>{department}</option>))}
                         </select>
                     </div>

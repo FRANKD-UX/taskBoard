@@ -9,6 +9,9 @@ var incidentSla_1 = require("./incidentSla");
 var theme_1 = require("./theme");
 var DepartmentService_1 = require("../../../services/DepartmentService");
 var SharePointService_1 = require("../services/SharePointService");
+var IncidentAssignmentService_1 = require("../../../services/incidents/IncidentAssignmentService");
+var IncidentPolicy_1 = require("../../../services/incidents/IncidentPolicy");
+var IncidentDepartmentRules_1 = require("../../../services/incidents/IncidentDepartmentRules");
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
 var INCIDENT_STATUSES = ['New', 'Investigating', 'Resolved'];
@@ -69,23 +72,23 @@ var cancelBtnStyle = { flex: 1, padding: '11px 16px', borderRadius: '8px', borde
 var typeBadgeStyle = function (type) { return ({ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, backgroundColor: type === 'incident' ? '#fff7ed' : theme_1.THEME.colors.primarySoft, color: type === 'incident' ? '#9a3412' : '#0369a1' }); };
 var severityTagBaseStyle = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: '40px', borderRadius: '8px', border: '1px solid', padding: '0 12px', fontSize: '13px', fontWeight: 700 };
 var WorkItemModal = function (_a) {
-    var _b, _c, _d, _e, _f, _g, _h;
-    var task = _a.task, canAssign = _a.canAssign, siteUrl = _a.siteUrl, context = _a.context, currentUserName = _a.currentUserName, currentUserSpId = _a.currentUserSpId, onSave = _a.onSave, onDelete = _a.onDelete, onClose = _a.onClose;
+    var _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var task = _a.task, canAssign = _a.canAssign, siteUrl = _a.siteUrl, context = _a.context, currentUserName = _a.currentUserName, currentUserSpId = _a.currentUserSpId, incidentUserContext = _a.incidentUserContext, onSave = _a.onSave, onDelete = _a.onDelete, onClose = _a.onClose;
     // SharePointService no longer depends on context – uses the centralized getSP() internally
     var sharePointService = (0, react_1.useMemo)(function () { return new SharePointService_1.SharePointService(); }, []);
-    var _j = (0, react_1.useState)(null), draft = _j[0], setDraft = _j[1];
-    var _k = (0, react_1.useState)(null), assignee = _k[0], setAssignee = _k[1];
-    var _l = (0, react_1.useState)(null), selectedIncidentType = _l[0], setSelectedIncidentType = _l[1];
-    var _m = (0, react_1.useState)([]), incidentTypes = _m[0], setIncidentTypes = _m[1];
-    var _o = (0, react_1.useState)(null), selectedIncidentTypeId = _o[0], setSelectedIncidentTypeId = _o[1];
-    var _p = (0, react_1.useState)(''), severity = _p[0], setSeverity = _p[1];
-    var _q = (0, react_1.useState)(true), incidentTypesLoading = _q[0], setIncidentTypesLoading = _q[1];
-    var _r = (0, react_1.useState)(false), isSaving = _r[0], setIsSaving = _r[1];
-    var _s = (0, react_1.useState)(''), saveError = _s[0], setSaveError = _s[1];
-    var _t = (0, react_1.useState)(''), titleError = _t[0], setTitleError = _t[1];
-    var _u = (0, react_1.useState)(''), incidentTypeError = _u[0], setIncidentTypeError = _u[1];
-    var _v = (0, react_1.useState)([]), departments = _v[0], setDepartments = _v[1];
-    var _w = (0, react_1.useState)(true), departmentsLoading = _w[0], setDepartmentsLoading = _w[1];
+    var _l = (0, react_1.useState)(null), draft = _l[0], setDraft = _l[1];
+    var _m = (0, react_1.useState)(null), assignee = _m[0], setAssignee = _m[1];
+    var _o = (0, react_1.useState)(null), selectedIncidentType = _o[0], setSelectedIncidentType = _o[1];
+    var _p = (0, react_1.useState)([]), incidentTypes = _p[0], setIncidentTypes = _p[1];
+    var _q = (0, react_1.useState)(null), selectedIncidentTypeId = _q[0], setSelectedIncidentTypeId = _q[1];
+    var _r = (0, react_1.useState)(''), severity = _r[0], setSeverity = _r[1];
+    var _s = (0, react_1.useState)(true), incidentTypesLoading = _s[0], setIncidentTypesLoading = _s[1];
+    var _t = (0, react_1.useState)(false), isSaving = _t[0], setIsSaving = _t[1];
+    var _u = (0, react_1.useState)(''), saveError = _u[0], setSaveError = _u[1];
+    var _v = (0, react_1.useState)(''), titleError = _v[0], setTitleError = _v[1];
+    var _w = (0, react_1.useState)(''), incidentTypeError = _w[0], setIncidentTypeError = _w[1];
+    var _x = (0, react_1.useState)([]), departments = _x[0], setDepartments = _x[1];
+    var _y = (0, react_1.useState)(true), departmentsLoading = _y[0], setDepartmentsLoading = _y[1];
     var titleRef = (0, react_1.useRef)(null);
     var lastTaskIdRef = (0, react_1.useRef)(null);
     var hasFocusedTitleRef = (0, react_1.useRef)(false);
@@ -95,7 +98,7 @@ var WorkItemModal = function (_a) {
     (0, react_1.useEffect)(function () {
         var isMounted = true;
         var loadDepartments = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var service, data;
+            var service, data, normalizedDepartments;
             return tslib_1.__generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -103,8 +106,9 @@ var WorkItemModal = function (_a) {
                         return [4 /*yield*/, service.getDepartments()];
                     case 1:
                         data = _a.sent();
+                        normalizedDepartments = Array.from(new Set(data.map(function (department) { return (0, IncidentDepartmentRules_1.normalizeDepartment)(department); }))).filter(function (department) { return IncidentDepartmentRules_1.ALLOWED_TASK_DEPARTMENTS.includes(department); });
                         if (isMounted) {
-                            setDepartments(data);
+                            setDepartments(normalizedDepartments);
                             setDepartmentsLoading(false);
                         }
                         return [2 /*return*/];
@@ -206,7 +210,7 @@ var WorkItemModal = function (_a) {
         var normalizedStatus = task.status || (normalizedType === 'incident' ? 'New' : 'Unassigned');
         var initialIncidentTypeId = normalizedType === 'incident' && task.incidentTypeId ? task.incidentTypeId : null;
         var initialSeverity = normalizedType === 'incident' ? task.severity : '';
-        var nextDraft = tslib_1.__assign(tslib_1.__assign({}, task), { type: normalizedType, requestType: toRequestType(normalizedType), status: normalizedStatus, site: task.site || 'Albertsdal', startDate: task.startDate || today, createdAt: task.createdAt || new Date().toISOString(), createdBy: task.createdBy || currentUserName, severity: normalizedType === 'incident' ? task.severity : undefined, impact: normalizedType === 'incident' ? (task.impact || '') : undefined, affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined, incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined, incidentType: null, department: task.department, slaResponseMinutes: task.slaResponseMinutes, slaResolutionMinutes: task.slaResolutionMinutes, slaDeadline: task.slaDeadline, slaStatus: task.slaStatus });
+        var nextDraft = tslib_1.__assign(tslib_1.__assign({}, task), { type: normalizedType, requestType: toRequestType(normalizedType), status: normalizedStatus, site: task.site || 'Albertsdal', startDate: task.startDate || today, createdAt: task.createdAt || new Date().toISOString(), createdBy: task.createdBy || currentUserName, severity: normalizedType === 'incident' ? task.severity : undefined, impact: normalizedType === 'incident' ? (task.impact || '') : undefined, affectedService: normalizedType === 'incident' ? (task.affectedService || '') : undefined, incidentTypeId: normalizedType === 'incident' ? task.incidentTypeId : undefined, incidentType: null, department: (0, IncidentDepartmentRules_1.normalizeDepartment)(task.department), slaResponseMinutes: task.slaResponseMinutes, slaResolutionMinutes: task.slaResolutionMinutes, slaDeadline: task.slaDeadline, slaStatus: task.slaStatus });
         setDraft(nextDraft);
         setSelectedIncidentType(null);
         setSelectedIncidentTypeId(initialIncidentTypeId);
@@ -262,6 +266,9 @@ var WorkItemModal = function (_a) {
                 setSeverity('');
                 return tslib_1.__assign(tslib_1.__assign(tslib_1.__assign({}, prev), patch), { requestType: toRequestType(nextType), incidentTypeId: undefined, incidentType: null, severity: undefined });
             }
+            if (patch.department !== undefined) {
+                patch.department = (0, IncidentDepartmentRules_1.normalizeDepartment)(patch.department);
+            }
             return tslib_1.__assign(tslib_1.__assign(tslib_1.__assign({}, prev), patch), { requestType: toRequestType(nextType) });
         });
         if ('title' in patch)
@@ -296,10 +303,10 @@ var WorkItemModal = function (_a) {
         });
     };
     var handleSave = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var effectiveIncidentTypeId, itemToSave, saved, error_2, message;
-        var _a;
-        return tslib_1.__generator(this, function (_b) {
-            switch (_b.label) {
+        var effectiveIncidentTypeId, selectedIncidentTypeOption, itemToSave, saved, error_2, message;
+        var _a, _b, _c, _d, _e;
+        return tslib_1.__generator(this, function (_f) {
+            switch (_f.label) {
                 case 0:
                     if (!draft.title.trim()) {
                         setTitleError('Title is required');
@@ -311,16 +318,33 @@ var WorkItemModal = function (_a) {
                         setIncidentTypeError('Incident Type is required');
                         return [2 /*return*/];
                     }
+                    if (draft.type === 'incident' && IncidentPolicy_1.IncidentPolicy.requiresSite({
+                        department: draft.department,
+                        severity: draft.severity,
+                        site: draft.site,
+                        incidentTypeTitle: (_b = selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.title) !== null && _b !== void 0 ? _b : undefined,
+                    }) && !draft.site) {
+                        setSaveError('IT incidents require a site.');
+                        return [2 /*return*/];
+                    }
                     setIsSaving(true);
                     setSaveError('');
-                    _b.label = 1;
+                    _f.label = 1;
                 case 1:
-                    _b.trys.push([1, 3, 4, 5]);
+                    _f.trys.push([1, 3, 4, 5]);
+                    selectedIncidentTypeOption = (_c = incidentTypes.find(function (item) { return item.Id === effectiveIncidentTypeId; })) !== null && _c !== void 0 ? _c : null;
                     itemToSave = draft.type === 'incident'
-                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: effectiveIncidentTypeId !== null && effectiveIncidentTypeId !== void 0 ? effectiveIncidentTypeId : undefined, incidentType: null, severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity), impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
+                        ? tslib_1.__assign(tslib_1.__assign({}, draft), { requestType: 'Incident', incidentTypeId: effectiveIncidentTypeId !== null && effectiveIncidentTypeId !== void 0 ? effectiveIncidentTypeId : undefined, incidentType: effectiveIncidentTypeId
+                                ? {
+                                    id: effectiveIncidentTypeId,
+                                    title: (_e = (_d = selectedIncidentTypeOption === null || selectedIncidentTypeOption === void 0 ? void 0 : selectedIncidentTypeOption.Title) !== null && _d !== void 0 ? _d : selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.title) !== null && _e !== void 0 ? _e : '',
+                                    severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity),
+                                    department: (0, IncidentDepartmentRules_1.normalizeDepartment)(draft.department),
+                                }
+                                : null, severity: (severity || (selectedIncidentType === null || selectedIncidentType === void 0 ? void 0 : selectedIncidentType.severity) || draft.severity), impact: (draft.impact || '').trim(), affectedService: (draft.affectedService || '').trim() }) : tslib_1.__assign(tslib_1.__assign({}, draft), { type: 'task', requestType: 'Task', severity: undefined, impact: undefined, affectedService: undefined, incidentTypeId: undefined, incidentType: null });
                     return [4 /*yield*/, onSave(itemToSave)];
                 case 2:
-                    saved = _b.sent();
+                    saved = _f.sent();
                     if (!saved) {
                         setSaveError("Could not save ".concat(draft.type, ". Please verify required fields and assignee selection."));
                         return [2 /*return*/];
@@ -328,7 +352,7 @@ var WorkItemModal = function (_a) {
                     onClose();
                     return [3 /*break*/, 5];
                 case 3:
-                    error_2 = _b.sent();
+                    error_2 = _f.sent();
                     message = error_2 instanceof Error ? error_2.message : "Could not save ".concat(draft.type, " to SharePoint. Please try again.");
                     setSaveError(message);
                     return [3 /*break*/, 5];
@@ -350,6 +374,23 @@ var WorkItemModal = function (_a) {
     var derivedPriority = draft.type === 'incident'
         ? (derivedSeverity ? (0, incidentSla_1.getPriorityFromSeverity)(derivedSeverity) : draft.priority)
         : draft.priority;
+    var canClaimCurrentIncident = draft.type === 'incident' &&
+        IncidentAssignmentService_1.IncidentAssignmentService.canClaimIncident(incidentUserContext, {
+            department: draft.department,
+            severity: draft.severity,
+            assignedToId: draft.assignedToId,
+            incidentType: (_b = selectedIncidentType !== null && selectedIncidentType !== void 0 ? selectedIncidentType : draft.incidentType) !== null && _b !== void 0 ? _b : null,
+            site: draft.site,
+        });
+    var canEditAssignee = draft.type === 'incident'
+        ? IncidentAssignmentService_1.IncidentAssignmentService.canAssignIncident(incidentUserContext, {
+            department: draft.department,
+            severity: draft.severity,
+            assignedToId: draft.assignedToId,
+            incidentType: (_c = selectedIncidentType !== null && selectedIncidentType !== void 0 ? selectedIncidentType : draft.incidentType) !== null && _c !== void 0 ? _c : null,
+            site: draft.site,
+        }, (assignee === null || assignee === void 0 ? void 0 : assignee.id) != null ? { id: assignee.id, department: draft.department } : null) || canClaimCurrentIncident
+        : canAssign;
     return (React.createElement("div", { style: overlayStyle, onClick: onClose },
         React.createElement("div", { style: modalStyle, onClick: function (e) { return e.stopPropagation(); } },
             React.createElement("div", { style: headerStyle },
@@ -368,12 +409,20 @@ var WorkItemModal = function (_a) {
                         React.createElement("span", { style: { color: '#ef4444' } }, "*")),
                     React.createElement("input", { ref: titleRef, id: "wim-title", type: "text", value: draft.title, onChange: function (e) { return update({ title: e.target.value }); }, placeholder: draft.type === 'incident' ? 'Enter incident title' : 'Enter task title', style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { borderColor: titleError ? '#ef4444' : theme_1.THEME.colors.border }) }),
                     titleError && React.createElement("span", { style: { display: 'block', marginTop: '4px', fontSize: '12px', color: '#ef4444' } }, titleError)),
-                canAssign && (React.createElement("div", null,
+                canEditAssignee && (React.createElement("div", null,
                     React.createElement("label", { style: labelStyle }, "Assigned To"),
-                    React.createElement(PeoplePicker_1.default, { value: assignee, onChange: handleAssigneeChange, placeholder: "Search by name or email...", canEdit: true, siteUrl: siteUrl }))),
+                    React.createElement(PeoplePicker_1.default, { value: assignee, onChange: handleAssigneeChange, placeholder: "Search by name or email...", canEdit: true, siteUrl: siteUrl }),
+                    draft.type === 'incident' && canClaimCurrentIncident && currentUserSpId && (React.createElement("button", { type: "button", onClick: function () {
+                            return handleAssigneeChange({
+                                id: currentUserSpId,
+                                name: currentUserName,
+                                email: '',
+                                loginName: '',
+                            });
+                        }, style: { marginTop: '8px', background: 'none', border: 'none', color: theme_1.THEME.colors.primary, cursor: 'pointer', fontSize: '12px', padding: 0 } }, "Assign to me")))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "wim-site" }, "Site"),
-                    React.createElement("select", { id: "wim-site", value: (_b = draft.site) !== null && _b !== void 0 ? _b : 'Albertsdal', onChange: function (e) { return update({ site: e.target.value }); }, style: inputStyle }, SITES.map(function (site) { return React.createElement("option", { key: site.value, value: site.value }, site.label); }))),
+                    React.createElement("select", { id: "wim-site", value: (_d = draft.site) !== null && _d !== void 0 ? _d : 'Albertsdal', onChange: function (e) { return update({ site: e.target.value }); }, style: inputStyle }, SITES.map(function (site) { return React.createElement("option", { key: site.value, value: site.value }, site.label); }))),
                 React.createElement("div", { style: gridTwoStyle },
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "wim-status" }, "Status"),
@@ -408,16 +457,16 @@ var WorkItemModal = function (_a) {
                         React.createElement("label", { style: labelStyle, htmlFor: "wim-start-date" },
                             "Start Date ",
                             isNewItem && React.createElement("span", { style: { marginLeft: '6px', fontSize: '10px', color: theme_1.THEME.colors.primary, textTransform: 'none', fontWeight: 400 } }, "(auto)")),
-                        React.createElement("input", { id: "wim-start-date", type: "date", value: (_d = (_c = draft.startDate) === null || _c === void 0 ? void 0 : _c.split('T')[0]) !== null && _d !== void 0 ? _d : '', onChange: function (e) { return update({ startDate: e.target.value }); }, style: isNewItem ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewItem })),
+                        React.createElement("input", { id: "wim-start-date", type: "date", value: (_f = (_e = draft.startDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', onChange: function (e) { return update({ startDate: e.target.value }); }, style: isNewItem ? tslib_1.__assign(tslib_1.__assign({}, inputStyle), { opacity: 0.6, cursor: 'not-allowed' }) : inputStyle, readOnly: isNewItem })),
                     React.createElement("div", null,
                         React.createElement("label", { style: labelStyle, htmlFor: "wim-due-date" }, "Due Date"),
-                        React.createElement("input", { id: "wim-due-date", type: "date", value: (_f = (_e = draft.dueDate) === null || _e === void 0 ? void 0 : _e.split('T')[0]) !== null && _f !== void 0 ? _f : '', min: (_g = draft.startDate) === null || _g === void 0 ? void 0 : _g.split('T')[0], onChange: function (e) { return update({ dueDate: e.target.value }); }, style: inputStyle }))),
+                        React.createElement("input", { id: "wim-due-date", type: "date", value: (_h = (_g = draft.dueDate) === null || _g === void 0 ? void 0 : _g.split('T')[0]) !== null && _h !== void 0 ? _h : '', min: (_j = draft.startDate) === null || _j === void 0 ? void 0 : _j.split('T')[0], onChange: function (e) { return update({ dueDate: e.target.value }); }, style: inputStyle }))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "wim-department" }, "Department"),
-                    React.createElement("select", { id: "wim-department", value: draft.department, onChange: function (e) { return update({ department: e.target.value }); }, style: inputStyle }, departmentsLoading ? (React.createElement("option", null, "Loading...")) : departments.length === 0 ? (React.createElement("option", null, "No departments")) : (departments.map(function (department) { return React.createElement("option", { key: department, value: department }, department); })))),
+                    React.createElement("select", { id: "wim-department", value: draft.department, onChange: function (e) { return update({ department: (0, IncidentDepartmentRules_1.normalizeDepartment)(e.target.value) }); }, style: inputStyle }, departmentsLoading ? (React.createElement("option", null, "Loading...")) : departments.length === 0 ? (React.createElement("option", null, "No departments")) : (departments.map(function (department) { return React.createElement("option", { key: department, value: department }, department); })))),
                 React.createElement("div", null,
                     React.createElement("label", { style: labelStyle, htmlFor: "wim-description" }, "Description"),
-                    React.createElement("textarea", { id: "wim-description", value: (_h = draft.description) !== null && _h !== void 0 ? _h : '', onChange: function (e) { return update({ description: e.target.value }); }, placeholder: draft.type === 'incident' ? 'Add incident notes...' : 'Add a description...', rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),
+                    React.createElement("textarea", { id: "wim-description", value: (_k = draft.description) !== null && _k !== void 0 ? _k : '', onChange: function (e) { return update({ description: e.target.value }); }, placeholder: draft.type === 'incident' ? 'Add incident notes...' : 'Add a description...', rows: 3, style: tslib_1.__assign(tslib_1.__assign({}, inputStyle), { resize: 'vertical', minHeight: '80px' }) })),
                 !isNewItem && (React.createElement(CollaborationPanel_1.default, { taskSpId: taskSpId, taskTitle: draft.title, currentUserSpId: currentUserSpId }))),
             saveError && (React.createElement("div", { style: { padding: '10px 24px', backgroundColor: '#fef2f2', borderTop: "1px solid ".concat(theme_1.THEME.colors.border) } },
                 React.createElement("span", { style: { color: '#ef4444', fontSize: '13px' } }, saveError))),

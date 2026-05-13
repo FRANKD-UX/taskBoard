@@ -7,6 +7,7 @@ import { THEME } from './theme';
 import PeoplePicker from './PeoplePicker';
 import type { IResolvedUser } from './PeoplePicker';
 import { DepartmentService } from '../../../services/DepartmentService';
+import { normalizeDepartment } from '../../../services/incidents/IncidentDepartmentRules';
 
 // Types
 
@@ -238,7 +239,7 @@ const CreateTaskModal: React.FC<ICreateTaskModalProps> = ({
             dueDate: form.dueDate || undefined,
             description: form.description.trim() || undefined,
             requestType: form.requestType === 'Incident' ? 'Incident' : 'Task',
-            department: form.department,
+            department: normalizeDepartment(form.department),
             createdAt: new Date().toISOString(),
             assignedTo: assignee?.name ?? '',
             assignedToId: assignee?.id ?? undefined,

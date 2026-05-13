@@ -19,6 +19,10 @@ var TaskService_1 = require("../../../services/TaskService");
 var NotificationService_1 = require("../../../services/NotificationService");
 var UserRoleService_1 = require("../../../services/UserRoleService");
 var CollaboratorService_1 = require("../../../services/CollaboratorService");
+var IncidentVisibilityService_1 = require("../../../services/incidents/IncidentVisibilityService");
+var IncidentAssignmentService_1 = require("../../../services/incidents/IncidentAssignmentService");
+var IncidentPolicy_1 = require("../../../services/incidents/IncidentPolicy");
+var IncidentDepartmentRules_1 = require("../../../services/incidents/IncidentDepartmentRules");
 var TEMP_ID_PREFIX = 'temp_';
 var TASK_STATUSES = ['Unassigned', 'Backlog', 'ThisWeek', 'InProgress', 'Completed'];
 var INCIDENT_STATUSES = ['New', 'Investigating', 'Escalated', 'Resolved'];
@@ -220,7 +224,24 @@ var TaskBoard = function (_a) {
     var _o = (0, react_1.useState)(true), isLoading = _o[0], setIsLoading = _o[1];
     var _p = (0, react_1.useState)(''), currentUserRole = _p[0], setCurrentUserRole = _p[1];
     var _q = (0, react_1.useState)(''), currentUserDepartment = _q[0], setCurrentUserDepartment = _q[1];
+    var _r = (0, react_1.useState)(false), canAssignAcrossDepartments = _r[0], setCanAssignAcrossDepartments = _r[1];
+    var _s = (0, react_1.useState)(false), isDepartmentLead = _s[0], setIsDepartmentLead = _s[1];
     var taskService = (0, react_1.useMemo)(function () { return new TaskService_1.TaskService(); }, []);
+    var incidentUserContext = (0, react_1.useMemo)(function () { return ({
+        id: currentUserSpId,
+        role: currentUserRole,
+        department: currentUserDepartment,
+        canAssign: canAssign,
+        canAssignAcrossDepartments: canAssignAcrossDepartments,
+        isDepartmentLead: isDepartmentLead,
+    }); }, [
+        currentUserSpId,
+        currentUserRole,
+        currentUserDepartment,
+        canAssign,
+        canAssignAcrossDepartments,
+        isDepartmentLead,
+    ]);
     var taskItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'task'; }); }, [workItems]);
     var incidentItems = (0, react_1.useMemo)(function () { return workItems.filter(function (item) { return item.type === 'incident'; }); }, [workItems]);
     // -----------------------------------------------------------------------
@@ -280,7 +301,7 @@ var TaskBoard = function (_a) {
                             dueDate: item.dueDate,
                             createdAt: item.createdAt || new Date().toISOString(),
                             requestType: toRequestType(type),
-                            department: item.department || 'IT',
+                            department: (0, IncidentDepartmentRules_1.normalizeDepartment)(item.department),
                             description: item.description,
                             createdBy: item.createdBy || createdByFallback,
                             authorId: (_d = item.authorId) !== null && _d !== void 0 ? _d : null,
@@ -299,30 +320,25 @@ var TaskBoard = function (_a) {
             }
         });
     }); }, []);
-    var filterVisibleTasks = function (allTasks, userId, role, department) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var collaborationTaskIds, isManagerOrLead;
+    var filterVisibleTasks = function (allTasks, userId, userContext) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+        var collaborationTaskIds;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
                 case 0: return [4 /*yield*/, fetchCollaborationTaskIds(userId)];
                 case 1:
                     collaborationTaskIds = _a.sent();
-                    isManagerOrLead = role === 'Manager' || role === 'TeamLead';
                     return [2 /*return*/, allTasks.filter(function (task) {
-                            if (task.type === 'incident' && isManagerOrLead && task.department === department) {
-                                return true;
+                            if (task.type === 'incident') {
+                                return IncidentVisibilityService_1.IncidentVisibilityService.canViewIncident(userContext, task);
                             }
-                            if (task.authorId === userId)
-                                return true;
-                            if (task.assignedToId === userId)
-                                return true;
-                            if (collaborationTaskIds.has(task.id))
-                                return true;
-                            return false;
+                            return (task.authorId === userId ||
+                                task.assignedToId === userId ||
+                                collaborationTaskIds.has(task.id));
                         })];
             }
         });
     }); };
-    var loadAndMapTasks = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
+    var loadAndMapTasks = function (userContextOverride) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
         var sp, user_1, userId, items, mappedTasks, visibleTasks, error_1;
         return tslib_1.__generator(this, function (_a) {
             switch (_a.label) {
@@ -347,7 +363,7 @@ var TaskBoard = function (_a) {
                 case 4:
                     mappedTasks = _a.sent();
                     if (!userId) return [3 /*break*/, 6];
-                    return [4 /*yield*/, filterVisibleTasks(mappedTasks, userId, currentUserRole, currentUserDepartment)];
+                    return [4 /*yield*/, filterVisibleTasks(mappedTasks, userId, userContextOverride !== null && userContextOverride !== void 0 ? userContextOverride : incidentUserContext)];
                 case 5:
                     visibleTasks = _a.sent();
                     setWorkItems(visibleTasks);
@@ -366,53 +382,78 @@ var TaskBoard = function (_a) {
     }); };
     (0, react_1.useEffect)(function () {
         var initialize = function () { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-            var sp, user, role, roleError_1, notificationService, error_2;
-            var _a, _b, _c;
-            return tslib_1.__generator(this, function (_d) {
-                switch (_d.label) {
+            var sp, user, role, normalizedRoleDepartment, resolvedCanAssignAcrossDepartments, resolvedIsDepartmentLead, roleError_1, notificationService, error_2;
+            var _a, _b, _c, _d, _e;
+            return tslib_1.__generator(this, function (_f) {
+                switch (_f.label) {
                     case 0:
-                        _d.trys.push([0, 8, 9, 10]);
+                        _f.trys.push([0, 9, 10, 11]);
                         setIsLoading(true);
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, sp.web.currentUser()];
                     case 1:
-                        user = _d.sent();
+                        user = _f.sent();
                         setCurrentUserName(user.Title || '');
                         setCurrentUserEmail(user.Email || '');
                         setCurrentUserSpId((_a = user.Id) !== null && _a !== void 0 ? _a : null);
-                        _d.label = 2;
+                        _f.label = 2;
                     case 2:
-                        _d.trys.push([2, 4, , 5]);
+                        _f.trys.push([2, 5, , 7]);
                         return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(user.Email || '')];
                     case 3:
-                        role = _d.sent();
+                        role = _f.sent();
                         setCanAssign((role === null || role === void 0 ? void 0 : role.canAssign) === true);
                         setCurrentUserRole((_b = role === null || role === void 0 ? void 0 : role.role) !== null && _b !== void 0 ? _b : '');
-                        setCurrentUserDepartment((_c = role === null || role === void 0 ? void 0 : role.department) !== null && _c !== void 0 ? _c : '');
-                        return [3 /*break*/, 5];
+                        normalizedRoleDepartment = (0, IncidentDepartmentRules_1.normalizeDepartment)(role === null || role === void 0 ? void 0 : role.department);
+                        resolvedCanAssignAcrossDepartments = (role === null || role === void 0 ? void 0 : role.canAssignAcrossDepartments) === true;
+                        resolvedIsDepartmentLead = (role === null || role === void 0 ? void 0 : role.isDepartmentLead) === true;
+                        setCurrentUserDepartment(normalizedRoleDepartment);
+                        setCanAssignAcrossDepartments(resolvedCanAssignAcrossDepartments);
+                        setIsDepartmentLead(resolvedIsDepartmentLead);
+                        return [4 /*yield*/, loadAndMapTasks({
+                                id: (_c = user.Id) !== null && _c !== void 0 ? _c : null,
+                                role: (_d = role === null || role === void 0 ? void 0 : role.role) !== null && _d !== void 0 ? _d : '',
+                                department: normalizedRoleDepartment,
+                                canAssign: (role === null || role === void 0 ? void 0 : role.canAssign) === true,
+                                canAssignAcrossDepartments: resolvedCanAssignAcrossDepartments,
+                                isDepartmentLead: resolvedIsDepartmentLead,
+                            })];
                     case 4:
-                        roleError_1 = _d.sent();
+                        _f.sent();
+                        return [3 /*break*/, 7];
+                    case 5:
+                        roleError_1 = _f.sent();
                         console.warn('TaskBoard: role lookup failed; defaulting to read-only assignment', roleError_1);
                         setCanAssign(false);
-                        return [3 /*break*/, 5];
-                    case 5:
+                        setCurrentUserDepartment((0, IncidentDepartmentRules_1.normalizeDepartment)('Support'));
+                        setCanAssignAcrossDepartments(false);
+                        setIsDepartmentLead(false);
+                        return [4 /*yield*/, loadAndMapTasks({
+                                id: (_e = user.Id) !== null && _e !== void 0 ? _e : null,
+                                role: '',
+                                department: (0, IncidentDepartmentRules_1.normalizeDepartment)('Support'),
+                                canAssign: false,
+                                canAssignAcrossDepartments: false,
+                                isDepartmentLead: false,
+                            })];
+                    case 6:
+                        _f.sent();
+                        return [3 /*break*/, 7];
+                    case 7:
                         notificationService = new NotificationService_1.NotificationService(context);
                         taskService.setNotificationService(notificationService);
                         return [4 /*yield*/, taskService.checkAndEscalateSLAs()];
-                    case 6:
-                        _d.sent();
-                        return [4 /*yield*/, loadAndMapTasks()];
-                    case 7:
-                        _d.sent();
-                        return [3 /*break*/, 10];
                     case 8:
-                        error_2 = _d.sent();
-                        console.error('TaskBoard: initial load failed', error_2);
-                        return [3 /*break*/, 10];
+                        _f.sent();
+                        return [3 /*break*/, 11];
                     case 9:
+                        error_2 = _f.sent();
+                        console.error('TaskBoard: initial load failed', error_2);
+                        return [3 /*break*/, 11];
+                    case 10:
                         setIsLoading(false);
                         return [7 /*endfinally*/];
-                    case 10: return [2 /*return*/];
+                    case 11: return [2 /*return*/];
                 }
             });
         }); };
@@ -437,7 +478,7 @@ var TaskBoard = function (_a) {
                         return [4 /*yield*/, Promise.all(items.map(function (item) { return mapServiceItemToTask(item, currentUserName); }))];
                     case 3:
                         mapped = _a.sent();
-                        return [4 /*yield*/, filterVisibleTasks(mapped, currentUserSpId, currentUserRole, currentUserDepartment)];
+                        return [4 /*yield*/, filterVisibleTasks(mapped, currentUserSpId, incidentUserContext)];
                     case 4:
                         visibleTasks = _a.sent();
                         setWorkItems(visibleTasks);
@@ -451,7 +492,7 @@ var TaskBoard = function (_a) {
             });
         }); }, 60000);
         return function () { return clearInterval(interval); };
-    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, incidentUserContext]);
     // Tab switch fade animation
     (0, react_1.useEffect)(function () {
         if (activeView === displayedView)
@@ -533,7 +574,7 @@ var TaskBoard = function (_a) {
             dueDate: undefined,
             createdAt: new Date().toISOString(),
             requestType: toRequestType(type),
-            department: 'IT',
+            department: (0, IncidentDepartmentRules_1.normalizeDepartment)('IT'),
             description: '',
             assignedTo: canAssign ? '' : currentUserName,
             assignedToEmail: canAssign ? undefined : currentUserEmail,
@@ -556,7 +597,7 @@ var TaskBoard = function (_a) {
         setModalTask(null);
     };
     var handleSaveTask = function (task) { return tslib_1.__awaiter(void 0, void 0, void 0, function () {
-        var isNew, existingTask, effectiveTask_1, finalAssigneeId, finalAssigneeName, resolved, incidentType, incidentTypeId, derivedSeverity, derivedPriority, derivedDepartment, normaliseDate, shouldRebuildIncidentSla, incidentSla, payload, created, returnedId, items, mapped, persisted_1, updated_1, error_5;
+        var isNew, existingTask, effectiveTask_1, finalAssigneeId, finalAssigneeName, resolved, incidentType, incidentTypeId, derivedSeverity, derivedPriority, derivedDepartment, incidentInput, canAssignIncident, normaliseDate, shouldRebuildIncidentSla, incidentSla, payload, created, returnedId, items, mapped, persisted_1, updated_1, error_5;
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         return tslib_1.__generator(this, function (_o) {
             switch (_o.label) {
@@ -597,10 +638,48 @@ var TaskBoard = function (_a) {
                         ? (0, incidentSla_1.getPriorityFromSeverity)(derivedSeverity)
                         : effectiveTask_1.priority;
                     derivedDepartment = effectiveTask_1.type === 'incident'
-                        ? (incidentType === null || incidentType === void 0 ? void 0 : incidentType.department) || effectiveTask_1.department || 'IT'
-                        : effectiveTask_1.department || 'IT';
+                        ? (0, IncidentDepartmentRules_1.normalizeDepartment)((incidentType === null || incidentType === void 0 ? void 0 : incidentType.department) || effectiveTask_1.department)
+                        : (0, IncidentDepartmentRules_1.normalizeDepartment)(effectiveTask_1.department);
                     if (effectiveTask_1.type === 'incident' && (!incidentTypeId || !derivedSeverity)) {
                         throw new Error('Incident Type is required before an incident can be created.');
+                    }
+                    if (effectiveTask_1.type === 'incident') {
+                        incidentInput = {
+                            department: derivedDepartment,
+                            severity: derivedSeverity,
+                            assignedToId: finalAssigneeId,
+                            site: effectiveTask_1.site,
+                            incidentTypeTitle: incidentType === null || incidentType === void 0 ? void 0 : incidentType.title,
+                        };
+                        if (isNew && !IncidentPolicy_1.IncidentPolicy.canCreateIncident(incidentUserContext, derivedDepartment)) {
+                            throw new Error('You are not allowed to create incidents for this department.');
+                        }
+                        if (!isNew && !IncidentPolicy_1.IncidentPolicy.canEditIncident(incidentUserContext, incidentInput)) {
+                            throw new Error('You are not allowed to edit this incident.');
+                        }
+                        if (IncidentPolicy_1.IncidentPolicy.requiresSite(incidentInput) && !effectiveTask_1.site) {
+                            throw new Error('IT incidents require a site.');
+                        }
+                        if (finalAssigneeId !== null && finalAssigneeId !== undefined) {
+                            canAssignIncident = finalAssigneeId === currentUserSpId
+                                ? IncidentAssignmentService_1.IncidentAssignmentService.canClaimIncident(incidentUserContext, {
+                                    department: derivedDepartment,
+                                    severity: derivedSeverity,
+                                    assignedToId: finalAssigneeId,
+                                    incidentType: incidentType,
+                                    site: effectiveTask_1.site,
+                                })
+                                : IncidentAssignmentService_1.IncidentAssignmentService.canAssignIncident(incidentUserContext, {
+                                    department: derivedDepartment,
+                                    severity: derivedSeverity,
+                                    assignedToId: finalAssigneeId,
+                                    incidentType: incidentType,
+                                    site: effectiveTask_1.site,
+                                }, { id: finalAssigneeId, department: derivedDepartment });
+                            if (!canAssignIncident) {
+                                throw new Error('You are not allowed to assign this incident.');
+                            }
+                        }
                     }
                     normaliseDate = function (value) {
                         if (!value)
@@ -701,10 +780,24 @@ var TaskBoard = function (_a) {
         });
     }); };
     var handleUpdateTask = function (id, updates) {
+        var _a, _b;
         var nextUpdates = updates;
-        if (!canAssign && updates.assignedTo !== undefined) {
-            var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
-            nextUpdates = rest;
+        if (updates.assignedTo !== undefined || updates.assignedToId !== undefined) {
+            var existingItem = workItems.find(function (item) { return item.id === id; });
+            if ((existingItem === null || existingItem === void 0 ? void 0 : existingItem.type) === 'incident') {
+                var targetId = (_b = (_a = updates.assignedToId) !== null && _a !== void 0 ? _a : existingItem.assignedToId) !== null && _b !== void 0 ? _b : null;
+                var canAssignIncident = targetId === currentUserSpId
+                    ? IncidentAssignmentService_1.IncidentAssignmentService.canClaimIncident(incidentUserContext, existingItem)
+                    : IncidentAssignmentService_1.IncidentAssignmentService.canAssignIncident(incidentUserContext, existingItem, targetId ? { id: targetId, department: existingItem.department } : null);
+                if (!canAssignIncident) {
+                    var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
+                    nextUpdates = rest;
+                }
+            }
+            else if (!canAssign) {
+                var assignedTo = updates.assignedTo, assignedToId = updates.assignedToId, assignedToEmail = updates.assignedToEmail, assignedToLoginName = updates.assignedToLoginName, rest = tslib_1.__rest(updates, ["assignedTo", "assignedToId", "assignedToEmail", "assignedToLoginName"]);
+                nextUpdates = rest;
+            }
         }
         setWorkItems(function (prev) {
             return prev.map(function (item) { return (item.id === id ? tslib_1.__assign(tslib_1.__assign({}, item), nextUpdates) : item); });
@@ -875,7 +968,7 @@ var TaskBoard = function (_a) {
     };
     return (React.createElement(AppLayout_1.default, { selectedView: selectedView, onSelectView: setSelectedView },
         renderSelectedView(),
-        React.createElement(WorkItemModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: pnpjsConfig_1.DATA_SITE, context: context, currentUserName: currentUserName, currentUserSpId: currentUserSpId, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
+        React.createElement(WorkItemModal_1.default, { task: modalTask, canAssign: canAssign, siteUrl: pnpjsConfig_1.DATA_SITE, context: context, currentUserName: currentUserName, currentUserSpId: currentUserSpId, incidentUserContext: incidentUserContext, onSave: handleSaveTask, onDelete: handleDeleteTask, onClose: handleCloseModal })));
 };
 exports.default = TaskBoard;
 //# sourceMappingURL=TaskBoard.js.map
