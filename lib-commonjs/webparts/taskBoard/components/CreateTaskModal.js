@@ -7,6 +7,7 @@ var react_1 = require("react");
 var theme_1 = require("./theme");
 var PeoplePicker_1 = tslib_1.__importDefault(require("./PeoplePicker"));
 var DepartmentService_1 = require("../../../services/DepartmentService");
+var IncidentDepartmentRules_1 = require("../../../services/incidents/IncidentDepartmentRules");
 // Constants
 var TASK_STATUSES = [
     'Unassigned',
@@ -186,7 +187,7 @@ var CreateTaskModal = function (_a) {
             dueDate: form.dueDate || undefined,
             description: form.description.trim() || undefined,
             requestType: form.requestType === 'Incident' ? 'Incident' : 'Task',
-            department: form.department,
+            department: (0, IncidentDepartmentRules_1.normalizeDepartment)(form.department),
             createdAt: new Date().toISOString(),
             assignedTo: (_b = assignee === null || assignee === void 0 ? void 0 : assignee.name) !== null && _b !== void 0 ? _b : '',
             assignedToId: (_c = assignee === null || assignee === void 0 ? void 0 : assignee.id) !== null && _c !== void 0 ? _c : undefined,

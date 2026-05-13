@@ -28,7 +28,7 @@ var DepartmentService = /** @class */ (function () {
                         error_1 = _a.sent();
                         console.error('[DepartmentService] failed:', error_1);
                         // Fallback – keeps UI functional even if the list is missing
-                        return [2 /*return*/, ['IT', 'Finance', 'Operations', 'Support', 'Accounts']];
+                        return [2 /*return*/, ['Support', 'IT', 'Accounts', 'Operations', 'Complaints']];
                     case 4: return [2 /*return*/];
                 }
             });

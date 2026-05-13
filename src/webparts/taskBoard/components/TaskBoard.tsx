@@ -28,6 +28,10 @@ import { TaskService } from '../../../services/TaskService';
 import { NotificationService } from '../../../services/NotificationService';
 import { getUserRole } from '../../../services/UserRoleService';
 import { CollaboratorService } from '../../../services/CollaboratorService';
+import { IncidentVisibilityService } from '../../../services/incidents/IncidentVisibilityService';
+import { IncidentAssignmentService } from '../../../services/incidents/IncidentAssignmentService';
+import { IncidentPolicy, type IIncidentUserContext } from '../../../services/incidents/IncidentPolicy';
+import { normalizeDepartment } from '../../../services/incidents/IncidentDepartmentRules';
 
 type ViewKey = 'board' | 'table' | 'calendar' | 'gantt' | 'chart';
 
@@ -196,8 +200,28 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [currentUserRole, setCurrentUserRole] = useState<string>('');
     const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
+    const [canAssignAcrossDepartments, setCanAssignAcrossDepartments] = useState<boolean>(false);
+    const [isDepartmentLead, setIsDepartmentLead] = useState<boolean>(false);
 
     const taskService = useMemo(() => new TaskService(), []);
+    const incidentUserContext = useMemo<IIncidentUserContext>(
+        () => ({
+            id: currentUserSpId,
+            role: currentUserRole,
+            department: currentUserDepartment,
+            canAssign,
+            canAssignAcrossDepartments,
+            isDepartmentLead,
+        }),
+        [
+            currentUserSpId,
+            currentUserRole,
+            currentUserDepartment,
+            canAssign,
+            canAssignAcrossDepartments,
+            isDepartmentLead,
+        ]
+    );
 
     const taskItems = useMemo(() => workItems.filter((item) => item.type === 'task'), [workItems]);
     const incidentItems = useMemo(() => workItems.filter((item) => item.type === 'incident'), [workItems]);
@@ -255,7 +279,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 dueDate: item.dueDate,
                 createdAt: item.createdAt || new Date().toISOString(),
                 requestType: toRequestType(type),
-                department: item.department || 'IT',
+                department: normalizeDepartment(item.department),
                 description: item.description,
                 createdBy: item.createdBy || createdByFallback,
                 authorId: item.authorId ?? null,
@@ -278,24 +302,23 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
     const filterVisibleTasks = async (
         allTasks: Task[],
         userId: number,
-        role: string,
-        department: string
+        userContext: IIncidentUserContext
     ): Promise<Task[]> => {
         const collaborationTaskIds = await fetchCollaborationTaskIds(userId);
-        const isManagerOrLead = role === 'Manager' || role === 'TeamLead';
 
         return allTasks.filter((task) => {
-            if (task.type === 'incident' && isManagerOrLead && task.department === department) {
-                return true;
+            if (task.type === 'incident') {
+                return IncidentVisibilityService.canViewIncident(userContext, task);
             }
-            if (task.authorId === userId) return true;
-            if (task.assignedToId === userId) return true;
-            if (collaborationTaskIds.has(task.id)) return true;
-            return false;
+            return (
+                task.authorId === userId ||
+                task.assignedToId === userId ||
+                collaborationTaskIds.has(task.id)
+            );
         });
     };
 
-    const loadAndMapTasks = async (): Promise<void> => {
+    const loadAndMapTasks = async (userContextOverride?: IIncidentUserContext): Promise<void> => {
         if (!taskService) return;
         try {
             const sp = getSP();
@@ -312,7 +335,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
             if (userId) {
                 const visibleTasks = await filterVisibleTasks(
-                    mappedTasks, userId, currentUserRole, currentUserDepartment
+                    mappedTasks, userId, userContextOverride ?? incidentUserContext
                 );
                 setWorkItems(visibleTasks);
             } else {
@@ -337,17 +360,41 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     const role = await getUserRole(user.Email || '');
                     setCanAssign(role?.canAssign === true);
                     setCurrentUserRole(role?.role ?? '');
-                    setCurrentUserDepartment(role?.department ?? '');
+                    const normalizedRoleDepartment = normalizeDepartment(role?.department);
+                    const resolvedCanAssignAcrossDepartments = role?.canAssignAcrossDepartments === true;
+                    const resolvedIsDepartmentLead = role?.isDepartmentLead === true;
+                    setCurrentUserDepartment(normalizedRoleDepartment);
+                    setCanAssignAcrossDepartments(resolvedCanAssignAcrossDepartments);
+                    setIsDepartmentLead(resolvedIsDepartmentLead);
+
+                    await loadAndMapTasks({
+                        id: (user as any).Id ?? null,
+                        role: role?.role ?? '',
+                        department: normalizedRoleDepartment,
+                        canAssign: role?.canAssign === true,
+                        canAssignAcrossDepartments: resolvedCanAssignAcrossDepartments,
+                        isDepartmentLead: resolvedIsDepartmentLead,
+                    });
                 } catch (roleError) {
                     console.warn('TaskBoard: role lookup failed; defaulting to read-only assignment', roleError);
                     setCanAssign(false);
+                    setCurrentUserDepartment(normalizeDepartment('Support'));
+                    setCanAssignAcrossDepartments(false);
+                    setIsDepartmentLead(false);
+                    await loadAndMapTasks({
+                        id: (user as any).Id ?? null,
+                        role: '',
+                        department: normalizeDepartment('Support'),
+                        canAssign: false,
+                        canAssignAcrossDepartments: false,
+                        isDepartmentLead: false,
+                    });
                 }
 
                 const notificationService = new NotificationService(context);
                 taskService.setNotificationService(notificationService);
 
                 await taskService.checkAndEscalateSLAs();
-                await loadAndMapTasks();
             } catch (error) {
                 console.error('TaskBoard: initial load failed', error);
             } finally {
@@ -368,7 +415,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                     items.map((item: any) => mapServiceItemToTask(item, currentUserName))
                 );
                 const visibleTasks = await filterVisibleTasks(
-                    mapped, currentUserSpId, currentUserRole, currentUserDepartment
+                    mapped, currentUserSpId, incidentUserContext
                 );
                 setWorkItems(visibleTasks);
             } catch (error) {
@@ -376,7 +423,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             }
         }, 60000);
         return () => clearInterval(interval);
-    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, currentUserRole, currentUserDepartment]);
+    }, [isLoading, currentUserSpId, currentUserName, taskService, mapServiceItemToTask, incidentUserContext]);
 
     // Tab switch fade animation
     useEffect(() => {
@@ -452,7 +499,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
             dueDate: undefined,
             createdAt: new Date().toISOString(),
             requestType: toRequestType(type),
-            department: 'IT',
+            department: normalizeDepartment('IT'),
             description: '',
             assignedTo: canAssign ? '' : currentUserName,
             assignedToEmail: canAssign ? undefined : currentUserEmail,
@@ -526,11 +573,60 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 ? getPriorityFromSeverity(derivedSeverity)
                 : effectiveTask.priority;
             const derivedDepartment = effectiveTask.type === 'incident'
-                ? incidentType?.department || effectiveTask.department || 'IT'
-                : effectiveTask.department || 'IT';
+                ? normalizeDepartment(incidentType?.department || effectiveTask.department)
+                : normalizeDepartment(effectiveTask.department);
 
             if (effectiveTask.type === 'incident' && (!incidentTypeId || !derivedSeverity)) {
                 throw new Error('Incident Type is required before an incident can be created.');
+            }
+
+            if (effectiveTask.type === 'incident') {
+                const incidentInput = {
+                    department: derivedDepartment,
+                    severity: derivedSeverity,
+                    assignedToId: finalAssigneeId,
+                    site: effectiveTask.site,
+                    incidentTypeTitle: incidentType?.title,
+                };
+
+                if (isNew && !IncidentPolicy.canCreateIncident(incidentUserContext, derivedDepartment)) {
+                    throw new Error('You are not allowed to create incidents for this department.');
+                }
+
+                if (!isNew && !IncidentPolicy.canEditIncident(incidentUserContext, incidentInput)) {
+                    throw new Error('You are not allowed to edit this incident.');
+                }
+
+                if (IncidentPolicy.requiresSite(incidentInput) && !effectiveTask.site) {
+                    throw new Error('IT incidents require a site.');
+                }
+
+                if (finalAssigneeId !== null && finalAssigneeId !== undefined) {
+                    const canAssignIncident =
+                        finalAssigneeId === currentUserSpId
+                            ? IncidentAssignmentService.canClaimIncident(incidentUserContext, {
+                                department: derivedDepartment,
+                                severity: derivedSeverity,
+                                assignedToId: finalAssigneeId,
+                                incidentType,
+                                site: effectiveTask.site,
+                            })
+                            : IncidentAssignmentService.canAssignIncident(
+                                incidentUserContext,
+                                {
+                                    department: derivedDepartment,
+                                    severity: derivedSeverity,
+                                    assignedToId: finalAssigneeId,
+                                    incidentType,
+                                    site: effectiveTask.site,
+                                },
+                                { id: finalAssigneeId, department: derivedDepartment }
+                            );
+
+                    if (!canAssignIncident) {
+                        throw new Error('You are not allowed to assign this incident.');
+                    }
+                }
             }
 
             const normaliseDate = (value?: string): string => {
@@ -665,9 +761,26 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
 
     const handleUpdateTask = (id: string, updates: Partial<Task>): void => {
         let nextUpdates = updates;
-        if (!canAssign && updates.assignedTo !== undefined) {
-            const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
-            nextUpdates = rest;
+        if (updates.assignedTo !== undefined || updates.assignedToId !== undefined) {
+            const existingItem = workItems.find((item) => item.id === id);
+            if (existingItem?.type === 'incident') {
+                const targetId = updates.assignedToId ?? existingItem.assignedToId ?? null;
+                const canAssignIncident =
+                    targetId === currentUserSpId
+                        ? IncidentAssignmentService.canClaimIncident(incidentUserContext, existingItem)
+                        : IncidentAssignmentService.canAssignIncident(
+                            incidentUserContext,
+                            existingItem,
+                            targetId ? { id: targetId, department: existingItem.department } : null
+                        );
+                if (!canAssignIncident) {
+                    const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
+                    nextUpdates = rest;
+                }
+            } else if (!canAssign) {
+                const { assignedTo, assignedToId, assignedToEmail, assignedToLoginName, ...rest } = updates;
+                nextUpdates = rest;
+            }
         }
         setWorkItems((prev) =>
             prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item))
@@ -971,6 +1084,7 @@ const TaskBoard: React.FC<ITaskBoardProps> = ({ context }): React.ReactElement =
                 context={context}
                 currentUserName={currentUserName}
                 currentUserSpId={currentUserSpId}
+                incidentUserContext={incidentUserContext}
                 onSave={handleSaveTask}
                 onDelete={handleDeleteTask}
                 onClose={handleCloseModal}

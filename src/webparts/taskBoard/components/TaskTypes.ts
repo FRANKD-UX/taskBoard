@@ -36,10 +36,11 @@ export type TaskRequestType =
     | 'Incident';
 
 export type TaskDepartment =
-    | 'IT'
-    | 'Finance'
     | 'Support'
-    | 'Operations';
+    | 'IT'
+    | 'Accounts'
+    | 'Operations'
+    | 'Complaints';
 
 export type TaskSite =
     | 'Albertsdal'
@@ -99,7 +100,7 @@ export interface Task {
     createdAt: string;
 
     requestType: TaskRequestType;
-    department: string;
+    department: TaskDepartment;
 
     description?: string;
     createdBy?: string;
@@ -145,7 +146,7 @@ export interface ITask {
 
     description?: string;
     requestType: TaskRequestType;
-    department: string;
+    department: TaskDepartment;
     createdBy?: string;
     authorId?: number | null;           // <-- ADDED
 

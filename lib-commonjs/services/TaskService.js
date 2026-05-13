@@ -6,6 +6,10 @@ var tslib_1 = require("tslib");
 require("@pnp/sp/fields");
 var pnpjsConfig_1 = require("../pnpjsConfig");
 var CollaboratorService_1 = require("./CollaboratorService");
+var UserRoleService_1 = require("./UserRoleService");
+var IncidentPolicy_1 = require("./incidents/IncidentPolicy");
+var IncidentDepartmentRules_1 = require("./incidents/IncidentDepartmentRules");
+var IncidentCatalog_1 = require("./incidents/IncidentCatalog");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -46,7 +50,7 @@ var TaskService = /** @class */ (function () {
                         _a.trys.push([1, 3, , 4]);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(INCIDENT_TYPE_LIST_TITLE)
-                                .items.select('Id', 'Title', 'Severity', 'IsActive')
+                                .items.select('Id', 'Title', 'Severity', 'Department', 'IsActive')
                                 .filter('IsActive eq 1')
                                 .orderBy('Title', true)()];
                     case 2:
@@ -57,7 +61,7 @@ var TaskService = /** @class */ (function () {
                                 id: item.Id,
                                 title: item.Title,
                                 severity: item.Severity,
-                                department: item.Department,
+                                department: (0, IncidentDepartmentRules_1.normalizeDepartment)(item.Department),
                                 isActive: item.IsActive === true || item.IsActive === 1,
                             }); })];
                     case 3:
@@ -113,7 +117,7 @@ var TaskService = /** @class */ (function () {
                                 createdAt: item.Created,
                                 description: item.Description,
                                 requestType: requestType,
-                                department: item.Department || 'IT',
+                                department: (0, IncidentDepartmentRules_1.normalizeDepartment)(item.Department),
                                 severity: item.Severity,
                                 impact: item.Impact,
                                 affectedService: item.AffectedService,
@@ -191,20 +195,24 @@ var TaskService = /** @class */ (function () {
     };
     TaskService.prototype.createTask = function (task) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, listTitle, availableFields, incidentTypeFieldName, payload, assigneeField, result, raw, createdId, logError_1;
+            var normalizedDepartment, sp, listTitle, availableFields, incidentTypeFieldName, payload, assigneeField, result, raw, createdId, logError_1;
             var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
             return tslib_1.__generator(this, function (_x) {
                 switch (_x.label) {
                     case 0:
+                        normalizedDepartment = (0, IncidentDepartmentRules_1.ensureValidDepartment)(task.department);
+                        return [4 /*yield*/, this.validateIncidentBeforePersist('create', task)];
+                    case 1:
+                        _x.sent();
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, this.getTaskListTitle()];
-                    case 1:
+                    case 2:
                         listTitle = _x.sent();
                         return [4 /*yield*/, this.getListFieldNames()];
-                    case 2:
+                    case 3:
                         availableFields = _x.sent();
                         return [4 /*yield*/, this.getIncidentTypeFieldName()];
-                    case 3:
+                    case 4:
                         incidentTypeFieldName = _x.sent();
                         payload = {
                             Title: task.title,
@@ -215,7 +223,7 @@ var TaskService = /** @class */ (function () {
                             DueDate: this.validateDate(task.dueDate),
                             Description: task.description,
                             RequestType: task.requestType,
-                            Department: task.department,
+                            Department: normalizedDepartment,
                         };
                         this.applyFieldIfAvailable(payload, availableFields, 'Type', task.requestType);
                         this.applyFieldIfAvailable(payload, availableFields, 'Severity', (_a = task.severity) !== null && _a !== void 0 ? _a : null);
@@ -227,50 +235,56 @@ var TaskService = /** @class */ (function () {
                         this.applyFieldIfAvailable(payload, availableFields, 'SLADeadline', this.validateDateTime(task.slaDeadline));
                         this.applyFieldIfAvailable(payload, availableFields, 'SLAStatus', (_g = task.slaStatus) !== null && _g !== void 0 ? _g : null);
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
-                    case 4:
+                    case 5:
                         assigneeField = _x.sent();
                         this.applyAssigneeToPayload(payload, task.assignedToId, assigneeField);
                         return [4 /*yield*/, sp.web.lists
                                 .getByTitle(listTitle)
                                 .items.add(payload)];
-                    case 5:
+                    case 6:
                         result = _x.sent();
                         raw = result;
                         createdId = (_v = (_t = (_r = (_q = (_p = (_o = (_l = (_j = (_h = raw === null || raw === void 0 ? void 0 : raw.data) === null || _h === void 0 ? void 0 : _h.Id) !== null && _j !== void 0 ? _j : (_k = raw === null || raw === void 0 ? void 0 : raw.data) === null || _k === void 0 ? void 0 : _k.ID) !== null && _l !== void 0 ? _l : (_m = raw === null || raw === void 0 ? void 0 : raw.data) === null || _m === void 0 ? void 0 : _m.id) !== null && _o !== void 0 ? _o : raw === null || raw === void 0 ? void 0 : raw.Id) !== null && _p !== void 0 ? _p : raw === null || raw === void 0 ? void 0 : raw.ID) !== null && _q !== void 0 ? _q : raw === null || raw === void 0 ? void 0 : raw.id) !== null && _r !== void 0 ? _r : (_s = raw === null || raw === void 0 ? void 0 : raw.item) === null || _s === void 0 ? void 0 : _s.Id) !== null && _t !== void 0 ? _t : (_u = raw === null || raw === void 0 ? void 0 : raw.item) === null || _u === void 0 ? void 0 : _u.ID) !== null && _v !== void 0 ? _v : undefined;
-                        if (!(createdId && task.requestType === 'Incident')) return [3 /*break*/, 9];
-                        _x.label = 6;
-                    case 6:
-                        _x.trys.push([6, 8, , 9]);
-                        return [4 /*yield*/, this.logIncidentCreation(createdId, task)];
+                        if (!(createdId && task.requestType === 'Incident')) return [3 /*break*/, 10];
+                        _x.label = 7;
                     case 7:
-                        _x.sent();
-                        return [3 /*break*/, 9];
+                        _x.trys.push([7, 9, , 10]);
+                        return [4 /*yield*/, this.logIncidentCreation(createdId, task)];
                     case 8:
+                        _x.sent();
+                        return [3 /*break*/, 10];
+                    case 9:
                         logError_1 = _x.sent();
                         console.warn('TaskService.createTask: incident audit log failed.', logError_1);
-                        return [3 /*break*/, 9];
-                    case 9: return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, ((_w = raw === null || raw === void 0 ? void 0 : raw.data) !== null && _w !== void 0 ? _w : raw)), { id: createdId })];
+                        return [3 /*break*/, 10];
+                    case 10: return [2 /*return*/, tslib_1.__assign(tslib_1.__assign({}, ((_w = raw === null || raw === void 0 ? void 0 : raw.data) !== null && _w !== void 0 ? _w : raw)), { id: createdId })];
                 }
             });
         });
     };
     TaskService.prototype.updateTask = function (id, updates) {
         return tslib_1.__awaiter(this, void 0, void 0, function () {
-            var sp, listTitle, availableFields, incidentTypeFieldName, payload, assigneeField;
+            var existingItem, sp, listTitle, availableFields, incidentTypeFieldName, normalizedDepartment, payload, assigneeField;
             var _a, _b, _c, _d, _e, _f, _g;
             return tslib_1.__generator(this, function (_h) {
                 switch (_h.label) {
-                    case 0:
+                    case 0: return [4 /*yield*/, this.getTaskSnapshot(id)];
+                    case 1:
+                        existingItem = _h.sent();
+                        return [4 /*yield*/, this.validateIncidentBeforePersist('update', updates, existingItem !== null && existingItem !== void 0 ? existingItem : undefined)];
+                    case 2:
+                        _h.sent();
                         sp = (0, pnpjsConfig_1.getSP)();
                         return [4 /*yield*/, this.getTaskListTitle()];
-                    case 1:
+                    case 3:
                         listTitle = _h.sent();
                         return [4 /*yield*/, this.getListFieldNames()];
-                    case 2:
+                    case 4:
                         availableFields = _h.sent();
                         return [4 /*yield*/, this.getIncidentTypeFieldName()];
-                    case 3:
+                    case 5:
                         incidentTypeFieldName = _h.sent();
+                        normalizedDepartment = updates.department !== undefined ? (0, IncidentDepartmentRules_1.ensureValidDepartment)(updates.department) : undefined;
                         payload = {
                             Title: updates.title,
                             Status: updates.status,
@@ -280,7 +294,7 @@ var TaskService = /** @class */ (function () {
                             DueDate: this.validateDate(updates.dueDate),
                             Description: updates.description,
                             RequestType: updates.requestType,
-                            Department: updates.department,
+                            Department: normalizedDepartment,
                         };
                         if (updates.requestType !== undefined) {
                             this.applyFieldIfAvailable(payload, availableFields, 'Type', updates.requestType);
@@ -304,13 +318,13 @@ var TaskService = /** @class */ (function () {
                             this.applyFieldIfAvailable(payload, availableFields, 'SLAStatus', (_g = updates.slaStatus) !== null && _g !== void 0 ? _g : null);
                         }
                         return [4 /*yield*/, this.getAssigneeFieldConfig()];
-                    case 4:
+                    case 6:
                         assigneeField = _h.sent();
                         if (updates.assignedToId !== undefined) {
                             this.applyAssigneeToPayload(payload, updates.assignedToId, assigneeField);
                         }
                         return [4 /*yield*/, sp.web.lists.getByTitle(listTitle).items.getById(id).update(payload)];
-                    case 5:
+                    case 7:
                         _h.sent();
                         return [2 /*return*/];
                 }
@@ -495,6 +509,128 @@ var TaskService = /** @class */ (function () {
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+    TaskService.prototype.getTaskSnapshot = function (id) {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var tasks;
+            var _a;
+            return tslib_1.__generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0: return [4 /*yield*/, this.getTasks()];
+                    case 1:
+                        tasks = _b.sent();
+                        return [2 /*return*/, (_a = tasks.find(function (item) { return item.id === id; })) !== null && _a !== void 0 ? _a : null];
+                }
+            });
+        });
+    };
+    TaskService.prototype.getCurrentIncidentUserContext = function () {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var sp, currentUser, userId, userEmail, role, error_3;
+            var _a, _b, _c, _d;
+            return tslib_1.__generator(this, function (_e) {
+                switch (_e.label) {
+                    case 0:
+                        sp = (0, pnpjsConfig_1.getSP)();
+                        return [4 /*yield*/, sp.web.currentUser()];
+                    case 1:
+                        currentUser = _e.sent();
+                        userId = (_a = currentUser.Id) !== null && _a !== void 0 ? _a : null;
+                        userEmail = (_b = currentUser.Email) !== null && _b !== void 0 ? _b : '';
+                        role = null;
+                        if (!userEmail) return [3 /*break*/, 5];
+                        _e.label = 2;
+                    case 2:
+                        _e.trys.push([2, 4, , 5]);
+                        return [4 /*yield*/, (0, UserRoleService_1.getUserRole)(userEmail)];
+                    case 3:
+                        role = _e.sent();
+                        return [3 /*break*/, 5];
+                    case 4:
+                        error_3 = _e.sent();
+                        console.warn('TaskService: failed to resolve current user role for policy validation.', error_3);
+                        return [3 /*break*/, 5];
+                    case 5: return [2 /*return*/, {
+                            id: userId,
+                            role: (_c = role === null || role === void 0 ? void 0 : role.role) !== null && _c !== void 0 ? _c : '',
+                            department: (_d = role === null || role === void 0 ? void 0 : role.department) !== null && _d !== void 0 ? _d : '',
+                            canAssign: (role === null || role === void 0 ? void 0 : role.canAssign) === true,
+                            canAssignAcrossDepartments: (role === null || role === void 0 ? void 0 : role.canAssignAcrossDepartments) === true,
+                            isDepartmentLead: (role === null || role === void 0 ? void 0 : role.isDepartmentLead) === true,
+                        }];
+                }
+            });
+        });
+    };
+    TaskService.prototype.validateIncidentBeforePersist = function (operation, payload, existing) {
+        return tslib_1.__awaiter(this, void 0, void 0, function () {
+            var merged, requestType, department, severity, site, assignedToId, incidentTypeTitle, incidentTypeId, incidentTypeDepartment, actingUser, incident, assignmentChanged;
+            var _a, _b, _c, _d, _e;
+            return tslib_1.__generator(this, function (_f) {
+                switch (_f.label) {
+                    case 0:
+                        merged = tslib_1.__assign(tslib_1.__assign({}, (existing !== null && existing !== void 0 ? existing : {})), (payload !== null && payload !== void 0 ? payload : {}));
+                        requestType = this.normalizeRequestType(merged.requestType);
+                        if (requestType !== 'Incident') {
+                            return [2 /*return*/];
+                        }
+                        department = (0, IncidentDepartmentRules_1.ensureValidDepartment)(merged.department);
+                        severity = (0, IncidentDepartmentRules_1.ensureValidSeverity)(merged.severity);
+                        site = merged.site;
+                        assignedToId = (_a = merged.assignedToId) !== null && _a !== void 0 ? _a : null;
+                        incidentTypeTitle = (_b = merged.incidentType) === null || _b === void 0 ? void 0 : _b.title;
+                        incidentTypeId = (_c = merged.incidentTypeId) !== null && _c !== void 0 ? _c : null;
+                        if (!incidentTypeId) {
+                            throw new Error('Incident Type is required before an incident can be saved.');
+                        }
+                        if (IncidentPolicy_1.IncidentPolicy.requiresSite({ department: department, severity: severity, site: site, incidentTypeTitle: incidentTypeTitle }) && !site) {
+                            throw new Error('IT incidents require a site.');
+                        }
+                        if ((_d = merged.incidentType) === null || _d === void 0 ? void 0 : _d.department) {
+                            incidentTypeDepartment = (0, IncidentDepartmentRules_1.ensureValidDepartment)(merged.incidentType.department);
+                            if (incidentTypeDepartment !== department) {
+                                throw new Error('Incident type department must match incident department.');
+                            }
+                        }
+                        if (((_e = merged.incidentType) === null || _e === void 0 ? void 0 : _e.severity) && merged.incidentType.severity !== severity) {
+                            throw new Error('Incident type severity must match incident severity.');
+                        }
+                        if (incidentTypeTitle && !(0, IncidentCatalog_1.isIncidentTitleAllowedForDepartment)(department, incidentTypeTitle)) {
+                            throw new Error('Incident type is not compatible with the selected department.');
+                        }
+                        return [4 /*yield*/, this.getCurrentIncidentUserContext()];
+                    case 1:
+                        actingUser = _f.sent();
+                        incident = {
+                            department: department,
+                            severity: severity,
+                            assignedToId: assignedToId,
+                            site: site,
+                            incidentTypeTitle: incidentTypeTitle,
+                        };
+                        if (operation === 'create' && !IncidentPolicy_1.IncidentPolicy.canCreateIncident(actingUser, department)) {
+                            throw new Error('You are not allowed to create incidents for this department.');
+                        }
+                        if (operation === 'update' && !IncidentPolicy_1.IncidentPolicy.canEditIncident(actingUser, incident)) {
+                            throw new Error('You are not allowed to edit this incident.');
+                        }
+                        assignmentChanged = operation === 'create' || payload.assignedToId !== undefined;
+                        if (!assignmentChanged || assignedToId === null) {
+                            return [2 /*return*/];
+                        }
+                        if (assignedToId === actingUser.id) {
+                            if (!IncidentPolicy_1.IncidentPolicy.canClaimIncident(actingUser, incident)) {
+                                throw new Error('You are not allowed to claim this incident.');
+                            }
+                            return [2 /*return*/];
+                        }
+                        if (!IncidentPolicy_1.IncidentPolicy.canAssignIncident(actingUser, incident, { id: assignedToId, department: department })) {
+                            throw new Error('You are not allowed to assign this incident.');
+                        }
+                        return [2 /*return*/];
+                }
+            });
+        });
+    };
     TaskService.prototype.validateDate = function (date) {
         if (!date)
             return null;
@@ -793,7 +929,7 @@ var TaskService = /** @class */ (function () {
             id: item.Id,
             title: item.Title,
             severity: item.Severity,
-            department: item.Department,
+            department: (0, IncidentDepartmentRules_1.normalizeDepartment)(item.Department),
         };
     };
     TaskService.prototype.normalizeFieldName = function (value) {
